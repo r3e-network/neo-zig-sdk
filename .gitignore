@@ -2,6 +2,7 @@
 
 # Exclude original Swift SDK (not part of Zig implementation)
 NeoSwift/
+neo_csharp/
 
 # Zig build artifacts
 zig-out/
