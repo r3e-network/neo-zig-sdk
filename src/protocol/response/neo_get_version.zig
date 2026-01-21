@@ -4,8 +4,46 @@
 //! Provides version information response for Neo RPC calls.
 
 const std = @import("std");
+const ArrayList = std.ArrayList;
 
+const errors = @import("../../core/errors.zig");
+const PublicKey = @import("../../crypto/keys.zig").PublicKey;
+const StringUtils = @import("../../utils/string_extensions.zig").StringUtils;
 
+/// Hardfork entry in protocol settings.
+pub const HardforkInfo = struct {
+    name: []const u8,
+    block_height: u32,
+
+    pub fn init(name: []const u8, block_height: u32, allocator: std.mem.Allocator) !HardforkInfo {
+        return HardforkInfo{
+            .name = try allocator.dupe(u8, name),
+            .block_height = block_height,
+        };
+    }
+
+    pub fn fromJson(json_value: std.json.Value, allocator: std.mem.Allocator) !HardforkInfo {
+        if (json_value != .object) return errors.SerializationError.InvalidFormat;
+        const obj = json_value.object;
+        const name_value = obj.get("name") orelse return errors.SerializationError.InvalidFormat;
+        if (name_value != .string) return errors.SerializationError.InvalidFormat;
+        const height_value = obj.get("blockheight") orelse return errors.SerializationError.InvalidFormat;
+        const block_height = switch (height_value) {
+            .integer => |i| @as(u32, @intCast(i)),
+            .string => |s| std.fmt.parseInt(u32, s, 10) catch errors.SerializationError.InvalidFormat,
+            else => return errors.SerializationError.InvalidFormat,
+        };
+        return try HardforkInfo.init(name_value.string, block_height, allocator);
+    }
+
+    pub fn clone(self: HardforkInfo, allocator: std.mem.Allocator) !HardforkInfo {
+        return try HardforkInfo.init(self.name, self.block_height, allocator);
+    }
+
+    pub fn deinit(self: *HardforkInfo, allocator: std.mem.Allocator) void {
+        allocator.free(@constCast(self.name));
+    }
+};
 
 /// Neo protocol information (converted from Swift NeoProtocol)
 pub const NeoProtocol = struct {
@@ -27,6 +65,12 @@ pub const NeoProtocol = struct {
     memory_pool_max_transactions: u32,
     /// Initial GAS distribution
     initial_gas_distribution: u64,
+    /// Hardforks (optional)
+    hardforks: ?[]HardforkInfo,
+    /// Standby committee (optional)
+    standby_committee: ?[]PublicKey,
+    /// Seed list (optional)
+    seed_list: ?[][]const u8,
     
     const Self = @This();
     
@@ -41,6 +85,9 @@ pub const NeoProtocol = struct {
         max_transactions_per_block: u32,
         memory_pool_max_transactions: u32,
         initial_gas_distribution: u64,
+        hardforks: ?[]HardforkInfo,
+        standby_committee: ?[]PublicKey,
+        seed_list: ?[][]const u8,
     ) Self {
         return Self{
             .network = network,
@@ -52,6 +99,9 @@ pub const NeoProtocol = struct {
             .max_transactions_per_block = max_transactions_per_block,
             .memory_pool_max_transactions = memory_pool_max_transactions,
             .initial_gas_distribution = initial_gas_distribution,
+            .hardforks = hardforks,
+            .standby_committee = standby_committee,
+            .seed_list = seed_list,
         };
     }
     
@@ -65,7 +115,47 @@ pub const NeoProtocol = struct {
                self.address_version == other.address_version and
                self.max_transactions_per_block == other.max_transactions_per_block and
                self.memory_pool_max_transactions == other.memory_pool_max_transactions and
-               self.initial_gas_distribution == other.initial_gas_distribution;
+               self.initial_gas_distribution == other.initial_gas_distribution and
+               optionalHardforksEqual(self.hardforks, other.hardforks) and
+               optionalCommitteeEqual(self.standby_committee, other.standby_committee) and
+               optionalSeedListEqual(self.seed_list, other.seed_list);
+    }
+
+    fn optionalHardforksEqual(a: ?[]HardforkInfo, b: ?[]HardforkInfo) bool {
+        if (a == null and b == null) return true;
+        if (a == null or b == null) return false;
+        const a_items = a.?;
+        const b_items = b.?;
+        if (a_items.len != b_items.len) return false;
+        for (a_items, 0..) |item, i| {
+            if (item.block_height != b_items[i].block_height) return false;
+            if (!std.mem.eql(u8, item.name, b_items[i].name)) return false;
+        }
+        return true;
+    }
+
+    fn optionalCommitteeEqual(a: ?[]PublicKey, b: ?[]PublicKey) bool {
+        if (a == null and b == null) return true;
+        if (a == null or b == null) return false;
+        const a_items = a.?;
+        const b_items = b.?;
+        if (a_items.len != b_items.len) return false;
+        for (a_items, 0..) |item, i| {
+            if (!std.mem.eql(u8, item.toSlice(), b_items[i].toSlice())) return false;
+        }
+        return true;
+    }
+
+    fn optionalSeedListEqual(a: ?[][]const u8, b: ?[][]const u8) bool {
+        if (a == null and b == null) return true;
+        if (a == null or b == null) return false;
+        const a_items = a.?;
+        const b_items = b.?;
+        if (a_items.len != b_items.len) return false;
+        for (a_items, 0..) |item, i| {
+            if (!std.mem.eql(u8, item, b_items[i])) return false;
+        }
+        return true;
     }
     
     /// Hash function (equivalent to Swift Hashable)
@@ -82,6 +172,28 @@ pub const NeoProtocol = struct {
         hasher.update(std.mem.asBytes(&self.max_transactions_per_block));
         hasher.update(std.mem.asBytes(&self.memory_pool_max_transactions));
         hasher.update(std.mem.asBytes(&self.initial_gas_distribution));
+        if (self.hardforks) |hardforks| {
+            const count: u64 = @intCast(hardforks.len);
+            hasher.update(std.mem.asBytes(&count));
+            for (hardforks) |item| {
+                hasher.update(item.name);
+                hasher.update(std.mem.asBytes(&item.block_height));
+            }
+        }
+        if (self.standby_committee) |committee| {
+            const count: u64 = @intCast(committee.len);
+            hasher.update(std.mem.asBytes(&count));
+            for (committee) |item| {
+                hasher.update(item.toSlice());
+            }
+        }
+        if (self.seed_list) |seeds| {
+            const count: u64 = @intCast(seeds.len);
+            hasher.update(std.mem.asBytes(&count));
+            for (seeds) |seed| {
+                hasher.update(seed);
+            }
+        }
         return hasher.final();
     }
     
@@ -155,6 +267,52 @@ pub const NeoProtocol = struct {
         const max_transactions_per_block = @as(u32, @intCast(json_obj.get("maxtransactionsperblock").?.integer));
         const memory_pool_max_transactions = @as(u32, @intCast(json_obj.get("memorypoolmaxtransactions").?.integer));
         const initial_gas_distribution = @as(u64, @intCast(json_obj.get("initialgasdistribution").?.integer));
+
+        var hardforks_list: ?[]HardforkInfo = null;
+        errdefer if (hardforks_list) |items| {
+            for (items) |*item| item.deinit(allocator);
+            allocator.free(items);
+        };
+        if (json_obj.get("hardforks")) |hardforks_value| {
+            if (hardforks_value != .array) return errors.SerializationError.InvalidFormat;
+            var hardforks = ArrayList(HardforkInfo).init(allocator);
+            errdefer hardforks.deinit();
+            for (hardforks_value.array.items) |item| {
+                try hardforks.append(try HardforkInfo.fromJson(item, allocator));
+            }
+            hardforks_list = try hardforks.toOwnedSlice();
+        }
+
+        var standby_committee_list: ?[]PublicKey = null;
+        errdefer if (standby_committee_list) |items| allocator.free(items);
+        if (json_obj.get("standbycommittee")) |committee_value| {
+            if (committee_value != .array) return errors.SerializationError.InvalidFormat;
+            var committee = ArrayList(PublicKey).init(allocator);
+            errdefer committee.deinit();
+            for (committee_value.array.items) |item| {
+                if (item != .string) return errors.SerializationError.InvalidFormat;
+                const key_bytes = try StringUtils.bytesFromHex(item.string, allocator);
+                defer allocator.free(key_bytes);
+                try committee.append(try PublicKey.initFromBytes(key_bytes));
+            }
+            standby_committee_list = try committee.toOwnedSlice();
+        }
+
+        var seed_list_value: ?[][]const u8 = null;
+        errdefer if (seed_list_value) |items| {
+            for (items) |seed| allocator.free(@constCast(seed));
+            allocator.free(items);
+        };
+        if (json_obj.get("seedlist")) |seed_value| {
+            if (seed_value != .array) return errors.SerializationError.InvalidFormat;
+            var seeds = ArrayList([]const u8).init(allocator);
+            errdefer seeds.deinit();
+            for (seed_value.array.items) |item| {
+                if (item != .string) return errors.SerializationError.InvalidFormat;
+                try seeds.append(try allocator.dupe(u8, item.string));
+            }
+            seed_list_value = try seeds.toOwnedSlice();
+        }
         
         return Self.init(
             network,
@@ -166,6 +324,79 @@ pub const NeoProtocol = struct {
             max_transactions_per_block,
             memory_pool_max_transactions,
             initial_gas_distribution,
+            hardforks_list,
+            standby_committee_list,
+            seed_list_value,
+        );
+    }
+
+    /// Cleanup allocated resources.
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        if (self.hardforks) |items| {
+            for (items) |*item| item.deinit(allocator);
+            allocator.free(items);
+            self.hardforks = null;
+        }
+
+        if (self.standby_committee) |committee| {
+            allocator.free(committee);
+            self.standby_committee = null;
+        }
+
+        if (self.seed_list) |seeds| {
+            for (seeds) |seed| allocator.free(@constCast(seed));
+            allocator.free(seeds);
+            self.seed_list = null;
+        }
+    }
+
+    /// Deep clone with owned memory.
+    pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
+        var hardforks_copy: ?[]HardforkInfo = null;
+        errdefer if (hardforks_copy) |items| {
+            for (items) |*item| item.deinit(allocator);
+            allocator.free(items);
+        };
+        if (self.hardforks) |hardforks| {
+            var items = try allocator.alloc(HardforkInfo, hardforks.len);
+            for (hardforks, 0..) |item, i| {
+                items[i] = try item.clone(allocator);
+            }
+            hardforks_copy = items;
+        }
+
+        var committee_copy: ?[]PublicKey = null;
+        errdefer if (committee_copy) |items| allocator.free(items);
+        if (self.standby_committee) |committee| {
+            committee_copy = try allocator.dupe(PublicKey, committee);
+        }
+
+        var seed_list_copy: ?[][]const u8 = null;
+        errdefer if (seed_list_copy) |items| {
+            for (items) |seed| allocator.free(@constCast(seed));
+            allocator.free(items);
+        };
+        if (self.seed_list) |seeds| {
+            var items = try allocator.alloc([]const u8, seeds.len);
+            for (seeds, 0..) |seed, i| {
+                items[i] = try allocator.dupe(u8, seed);
+            }
+            seed_list_copy = items;
+        }
+
+        return Self.init(
+            self.network,
+            self.validators_count,
+            self.ms_per_block,
+            self.max_valid_until_block_increment,
+            self.max_traceable_blocks,
+            self.address_version,
+            self.max_transactions_per_block,
+            self.memory_pool_max_transactions,
+            self.initial_gas_distribution,
+            hardforks_copy,
+            committee_copy,
+            seed_list_copy,
         );
     }
 };
@@ -333,12 +564,20 @@ pub const NeoVersion = struct {
     /// Cleanup allocated resources
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
         allocator.free(self.user_agent);
+        if (self.protocol) |*protocol| {
+            protocol.deinit(allocator);
+        }
+        self.protocol = null;
     }
     
     /// Clone with owned memory
     pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
         const user_agent_copy = try allocator.dupe(u8, self.user_agent);
-        return Self.init(self.tcp_port, self.ws_port, self.nonce, user_agent_copy, self.protocol);
+        const protocol_copy = if (self.protocol) |protocol|
+            try protocol.clone(allocator)
+        else
+            null;
+        return Self.init(self.tcp_port, self.ws_port, self.nonce, user_agent_copy, protocol_copy);
     }
     
     /// Format for display
@@ -403,6 +642,9 @@ test "NeoProtocol creation and properties" {
         512,        // Max transactions per block
         50000,      // Memory pool max transactions
         52000000,   // Initial GAS distribution
+        null,
+        null,
+        null,
     );
     
     try testing.expect(protocol.isMainnet());
@@ -461,6 +703,9 @@ test "NeoVersion with protocol" {
         512,        // Max transactions per block
         50000,      // Memory pool max transactions
         52000000,   // Initial GAS distribution
+        null,
+        null,
+        null,
     );
     
     const user_agent = try allocator.dupe(u8, "NEO-GO:3.5.0");

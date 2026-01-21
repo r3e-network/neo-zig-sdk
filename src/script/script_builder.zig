@@ -111,7 +111,7 @@ pub const ScriptBuilder = struct {
                 _ = try self.opCode(&[_]OpCode{.PUSHNULL});
             },
             .Boolean => |value| {
-                const op = if (value) OpCode.PUSH1 else OpCode.PUSH0;
+                const op = if (value) OpCode.PUSHT else OpCode.PUSHF;
                 _ = try self.opCode(&[_]OpCode{op});
             },
             .Integer => |value| {
@@ -277,6 +277,27 @@ pub const ScriptBuilder = struct {
 
         // CheckMultiSig
         _ = try builder.sysCall(.SystemCryptoCheckMultisig);
+
+        return try allocator.dupe(u8, builder.toScript());
+    }
+
+    /// Build a contract hash script (matches Neo Helper.GetContractHash).
+    pub fn buildContractHashScript(
+        deployment_sender: Hash160,
+        nef_checksum: u32,
+        contract_name: []const u8,
+        allocator: std.mem.Allocator,
+    ) ![]u8 {
+        var builder = ScriptBuilder.init(allocator);
+        defer builder.deinit();
+
+        _ = try builder.opCode(&[_]OpCode{.ABORT});
+
+        const sender_le = deployment_sender.toLittleEndianArray();
+        _ = try builder.pushData(&sender_le);
+
+        _ = try builder.pushInteger(@intCast(nef_checksum));
+        _ = try builder.pushData(contract_name);
 
         return try allocator.dupe(u8, builder.toScript());
     }

@@ -901,21 +901,12 @@ fn buildContractHashScript(
     contract_name: []const u8,
     allocator: std.mem.Allocator,
 ) ![]u8 {
-    // Build contract hash script using Neo protocol rules
-    var script_builder = @import("../script/script_builder.zig").ScriptBuilder.init(allocator);
-    defer script_builder.deinit();
-
-    // Push deployment sender
-    _ = try script_builder.pushData(&deployment_sender.toArray());
-
-    // Push NEF checksum
-    const checksum_bytes = std.mem.toBytes(std.mem.nativeToLittle(i32, nef_checksum));
-    _ = try script_builder.pushData(&checksum_bytes);
-
-    // Push contract name
-    _ = try script_builder.pushData(contract_name);
-
-    return try allocator.dupe(u8, script_builder.toScript());
+    return try @import("../script/script_builder.zig").ScriptBuilder.buildContractHashScript(
+        deployment_sender,
+        @intCast(nef_checksum),
+        contract_name,
+        allocator,
+    );
 }
 
 fn signMessage(message: []const u8, key_pair: anytype, allocator: std.mem.Allocator) ![]u8 {

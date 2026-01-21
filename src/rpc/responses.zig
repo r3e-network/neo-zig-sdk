@@ -14,6 +14,7 @@ const errors = @import("../core/errors.zig");
 const ContractParameter = @import("../types/contract_parameter.zig").ContractParameter;
 const NeoVMStateType = @import("../types/neo_vm_state_type.zig").NeoVMStateType;
 const StringUtils = @import("../utils/string_extensions.zig").StringUtils;
+const PublicKey = @import("../crypto/keys.zig").PublicKey;
 pub const StackItem = @import("../types/stack_item.zig").StackItem;
 
 fn stringifyJsonValue(value: std.json.Value, allocator: std.mem.Allocator) ![]u8 {
@@ -685,7 +686,39 @@ pub const NeoVersion = struct {
             allocator.free(@constCast(self.user_agent));
             self.user_agent = "";
         }
+        if (self.protocol) |*protocol| {
+            protocol.deinit(allocator);
+        }
         self.protocol = null;
+    }
+};
+
+/// Hardfork entry in protocol settings.
+pub const HardforkInfo = struct {
+    name: []const u8,
+    block_height: u32,
+
+    pub fn init(name: []const u8, block_height: u32, allocator: std.mem.Allocator) !HardforkInfo {
+        return HardforkInfo{
+            .name = try allocator.dupe(u8, name),
+            .block_height = block_height,
+        };
+    }
+
+    pub fn fromJson(json_value: std.json.Value, allocator: std.mem.Allocator) !HardforkInfo {
+        if (json_value != .object) return errors.SerializationError.InvalidFormat;
+        const obj = json_value.object;
+        const name_value = obj.get("name") orelse return errors.SerializationError.InvalidFormat;
+        if (name_value != .string) return errors.SerializationError.InvalidFormat;
+
+        const block_value = obj.get("blockheight") orelse return errors.SerializationError.InvalidFormat;
+        const block_height = try parseIntFromJson(u32, block_value);
+
+        return try HardforkInfo.init(name_value.string, block_height, allocator);
+    }
+
+    pub fn deinit(self: *HardforkInfo, allocator: std.mem.Allocator) void {
+        allocator.free(@constCast(self.name));
     }
 };
 
@@ -700,6 +733,9 @@ pub const ProtocolConfiguration = struct {
     memory_pool_max_transactions: ?u32,
     validators_count: ?u32,
     initial_gas_distribution: ?u64,
+    hardforks: ?[]HardforkInfo,
+    standby_committee: ?[]PublicKey,
+    seed_list: ?[][]const u8,
 
     pub fn init() ProtocolConfiguration {
         return ProtocolConfiguration{
@@ -712,12 +748,60 @@ pub const ProtocolConfiguration = struct {
             .memory_pool_max_transactions = null,
             .validators_count = null,
             .initial_gas_distribution = null,
+            .hardforks = null,
+            .standby_committee = null,
+            .seed_list = null,
         };
     }
 
     pub fn fromJson(json_value: std.json.Value, allocator: std.mem.Allocator) !ProtocolConfiguration {
-        _ = allocator;
         const obj = json_value.object;
+
+        var hardforks_list: ?[]HardforkInfo = null;
+        errdefer if (hardforks_list) |items| {
+            for (items) |*item| item.deinit(allocator);
+            allocator.free(items);
+        };
+        if (obj.get("hardforks")) |hardforks_value| {
+            if (hardforks_value != .array) return errors.SerializationError.InvalidFormat;
+            var hardforks = ArrayList(HardforkInfo).init(allocator);
+            errdefer hardforks.deinit();
+            for (hardforks_value.array.items) |item| {
+                try hardforks.append(try HardforkInfo.fromJson(item, allocator));
+            }
+            hardforks_list = try hardforks.toOwnedSlice();
+        }
+
+        var standby_committee_list: ?[]PublicKey = null;
+        errdefer if (standby_committee_list) |items| allocator.free(items);
+        if (obj.get("standbycommittee")) |committee_value| {
+            if (committee_value != .array) return errors.SerializationError.InvalidFormat;
+            var committee = ArrayList(PublicKey).init(allocator);
+            errdefer committee.deinit();
+            for (committee_value.array.items) |item| {
+                if (item != .string) return errors.SerializationError.InvalidFormat;
+                const key_bytes = try StringUtils.bytesFromHex(item.string, allocator);
+                defer allocator.free(key_bytes);
+                try committee.append(try PublicKey.initFromBytes(key_bytes));
+            }
+            standby_committee_list = try committee.toOwnedSlice();
+        }
+
+        var seed_list_value: ?[][]const u8 = null;
+        errdefer if (seed_list_value) |items| {
+            for (items) |seed| allocator.free(@constCast(seed));
+            allocator.free(items);
+        };
+        if (obj.get("seedlist")) |seed_value| {
+            if (seed_value != .array) return errors.SerializationError.InvalidFormat;
+            var seeds = ArrayList([]const u8).init(allocator);
+            errdefer seeds.deinit();
+            for (seed_value.array.items) |item| {
+                if (item != .string) return errors.SerializationError.InvalidFormat;
+                try seeds.append(try allocator.dupe(u8, item.string));
+            }
+            seed_list_value = try seeds.toOwnedSlice();
+        }
 
         return ProtocolConfiguration{
             .network = @intCast(obj.get("network").?.integer),
@@ -729,7 +813,29 @@ pub const ProtocolConfiguration = struct {
             .memory_pool_max_transactions = if (obj.get("memorypoolmaxtransactions")) |v| try parseIntFromJson(u32, v) else null,
             .validators_count = if (obj.get("validatorscount")) |v| try parseIntFromJson(u32, v) else null,
             .initial_gas_distribution = if (obj.get("initialgasdistribution")) |v| try parseIntFromJson(u64, v) else null,
+            .hardforks = hardforks_list,
+            .standby_committee = standby_committee_list,
+            .seed_list = seed_list_value,
         };
+    }
+
+    pub fn deinit(self: *ProtocolConfiguration, allocator: std.mem.Allocator) void {
+        if (self.hardforks) |items| {
+            for (items) |*item| item.deinit(allocator);
+            allocator.free(items);
+            self.hardforks = null;
+        }
+
+        if (self.standby_committee) |committee| {
+            allocator.free(committee);
+            self.standby_committee = null;
+        }
+
+        if (self.seed_list) |seeds| {
+            for (seeds) |seed| allocator.free(@constCast(seed));
+            allocator.free(seeds);
+            self.seed_list = null;
+        }
     }
 };
 

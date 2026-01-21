@@ -31,21 +31,24 @@ pub const CompleteInteropService = enum {
 
     // Runtime services
     SystemRuntimePlatform,
+    SystemRuntimeGetNetwork,
+    SystemRuntimeGetAddressVersion,
     SystemRuntimeGetTrigger,
     SystemRuntimeGetTime,
     SystemRuntimeGetScriptContainer,
     SystemRuntimeGetExecutingScriptHash,
     SystemRuntimeGetCallingScriptHash,
     SystemRuntimeGetEntryScriptHash,
+    SystemRuntimeLoadScript,
     SystemRuntimeCheckWitness,
     SystemRuntimeGetInvocationCounter,
+    SystemRuntimeGetRandom,
     SystemRuntimeLog,
     SystemRuntimeNotify,
     SystemRuntimeGetNotifications,
     SystemRuntimeGasLeft,
     SystemRuntimeBurnGas,
-    SystemRuntimeGetNetwork,
-    SystemRuntimeGetRandom,
+    SystemRuntimeCurrentSigners,
 
     // Storage services
     SystemStorageGetContext,
@@ -55,6 +58,10 @@ pub const CompleteInteropService = enum {
     SystemStorageFind,
     SystemStoragePut,
     SystemStorageDelete,
+    SystemStorageLocalGet,
+    SystemStorageLocalFind,
+    SystemStorageLocalPut,
+    SystemStorageLocalDelete,
 
     const Self = @This();
 
@@ -73,21 +80,24 @@ pub const CompleteInteropService = enum {
             .SystemIteratorNext => "System.Iterator.Next",
             .SystemIteratorValue => "System.Iterator.Value",
             .SystemRuntimePlatform => "System.Runtime.Platform",
+            .SystemRuntimeGetNetwork => "System.Runtime.GetNetwork",
+            .SystemRuntimeGetAddressVersion => "System.Runtime.GetAddressVersion",
             .SystemRuntimeGetTrigger => "System.Runtime.GetTrigger",
             .SystemRuntimeGetTime => "System.Runtime.GetTime",
             .SystemRuntimeGetScriptContainer => "System.Runtime.GetScriptContainer",
             .SystemRuntimeGetExecutingScriptHash => "System.Runtime.GetExecutingScriptHash",
             .SystemRuntimeGetCallingScriptHash => "System.Runtime.GetCallingScriptHash",
             .SystemRuntimeGetEntryScriptHash => "System.Runtime.GetEntryScriptHash",
+            .SystemRuntimeLoadScript => "System.Runtime.LoadScript",
             .SystemRuntimeCheckWitness => "System.Runtime.CheckWitness",
             .SystemRuntimeGetInvocationCounter => "System.Runtime.GetInvocationCounter",
+            .SystemRuntimeGetRandom => "System.Runtime.GetRandom",
             .SystemRuntimeLog => "System.Runtime.Log",
             .SystemRuntimeNotify => "System.Runtime.Notify",
             .SystemRuntimeGetNotifications => "System.Runtime.GetNotifications",
             .SystemRuntimeGasLeft => "System.Runtime.GasLeft",
             .SystemRuntimeBurnGas => "System.Runtime.BurnGas",
-            .SystemRuntimeGetNetwork => "System.Runtime.GetNetwork",
-            .SystemRuntimeGetRandom => "System.Runtime.GetRandom",
+            .SystemRuntimeCurrentSigners => "System.Runtime.CurrentSigners",
             .SystemStorageGetContext => "System.Storage.GetContext",
             .SystemStorageGetReadOnlyContext => "System.Storage.GetReadOnlyContext",
             .SystemStorageAsReadOnly => "System.Storage.AsReadOnly",
@@ -95,6 +105,10 @@ pub const CompleteInteropService = enum {
             .SystemStorageFind => "System.Storage.Find",
             .SystemStoragePut => "System.Storage.Put",
             .SystemStorageDelete => "System.Storage.Delete",
+            .SystemStorageLocalGet => "System.Storage.Local.Get",
+            .SystemStorageLocalFind => "System.Storage.Local.Find",
+            .SystemStorageLocalPut => "System.Storage.Local.Put",
+            .SystemStorageLocalDelete => "System.Storage.Local.Delete",
         };
     }
 
@@ -120,32 +134,54 @@ pub const CompleteInteropService = enum {
     pub fn getPrice(self: Self) u32 {
         return switch (self) {
             // Low cost services (1 << 3 = 8)
-            .SystemRuntimePlatform, .SystemRuntimeGetTrigger, .SystemRuntimeGetTime, .SystemRuntimeGetScriptContainer, .SystemRuntimeGetNetwork => 8,
+            .SystemRuntimePlatform,
+            .SystemRuntimeGetNetwork,
+            .SystemRuntimeGetAddressVersion,
+            .SystemRuntimeGetTrigger,
+            .SystemRuntimeGetTime,
+            .SystemRuntimeGetScriptContainer,
+            => 1 << 3,
 
             // Medium cost services (1 << 4 = 16)
-            .SystemIteratorValue, .SystemRuntimeGetExecutingScriptHash, .SystemRuntimeGetCallingScriptHash, .SystemRuntimeGetEntryScriptHash, .SystemRuntimeGetInvocationCounter, .SystemRuntimeGasLeft => 16,
+            .SystemIteratorValue,
+            .SystemRuntimeGetExecutingScriptHash,
+            .SystemRuntimeGetCallingScriptHash,
+            .SystemRuntimeGetEntryScriptHash,
+            .SystemRuntimeGetInvocationCounter,
+            .SystemRuntimeGasLeft,
+            .SystemRuntimeBurnGas,
+            .SystemRuntimeCurrentSigners,
+            .SystemStorageGetContext,
+            .SystemStorageGetReadOnlyContext,
+            .SystemStorageAsReadOnly,
+            => 1 << 4,
 
-            // Higher cost services (1 << 5 = 32)
-            .SystemRuntimeCheckWitness, .SystemRuntimeLog, .SystemRuntimeNotify, .SystemRuntimeGetNotifications, .SystemRuntimeBurnGas, .SystemRuntimeGetRandom => 32,
+            // Higher cost services (1 << 10 = 1024)
+            .SystemContractGetCallFlags,
+            .SystemRuntimeCheckWitness,
+            => 1 << 10,
 
-            // Storage services (1 << 6 = 64)
-            .SystemStorageGetContext, .SystemStorageGetReadOnlyContext, .SystemStorageAsReadOnly, .SystemStorageGet => 64,
+            // Expensive runtime services (1 << 12 = 4096)
+            .SystemRuntimeGetNotifications => 1 << 12,
 
-            // Expensive storage services (1 << 8 = 256)
-            .SystemStorageFind, .SystemStoragePut, .SystemStorageDelete => 256,
+            // Expensive services (1 << 15 = 32768)
+            .SystemCryptoCheckSig,
+            .SystemContractCall,
+            .SystemIteratorNext,
+            .SystemRuntimeLoadScript,
+            .SystemRuntimeLog,
+            .SystemRuntimeNotify,
+            .SystemStorageGet,
+            .SystemStorageFind,
+            .SystemStoragePut,
+            .SystemStorageDelete,
+            .SystemStorageLocalGet,
+            .SystemStorageLocalFind,
+            .SystemStorageLocalPut,
+            .SystemStorageLocalDelete,
+            => 1 << 15,
 
-            // Crypto services (1 << 10 = 1024)
-            .SystemCryptoCheckSig => 1024,
-            .SystemCryptoCheckMultisig => 4096, // 1 << 12
-
-            // Contract services (1 << 12 = 4096)
-            .SystemContractCall, .SystemContractCallNative => 4096,
-
-            // Expensive contract services (1 << 15 = 32768)
-            .SystemContractGetCallFlags, .SystemContractCreateStandardAccount, .SystemContractCreateMultiSigAccount, .SystemContractNativeOnPersist, .SystemContractNativePostPersist => 32768,
-
-            // Iterator services (1 << 4 = 16)
-            .SystemIteratorNext => 16,
+            else => 0,
         };
     }
 
@@ -164,21 +200,24 @@ pub const CompleteInteropService = enum {
             .SystemIteratorNext,
             .SystemIteratorValue,
             .SystemRuntimePlatform,
+            .SystemRuntimeGetNetwork,
+            .SystemRuntimeGetAddressVersion,
             .SystemRuntimeGetTrigger,
             .SystemRuntimeGetTime,
             .SystemRuntimeGetScriptContainer,
             .SystemRuntimeGetExecutingScriptHash,
             .SystemRuntimeGetCallingScriptHash,
             .SystemRuntimeGetEntryScriptHash,
+            .SystemRuntimeLoadScript,
             .SystemRuntimeCheckWitness,
             .SystemRuntimeGetInvocationCounter,
+            .SystemRuntimeGetRandom,
             .SystemRuntimeLog,
             .SystemRuntimeNotify,
             .SystemRuntimeGetNotifications,
             .SystemRuntimeGasLeft,
             .SystemRuntimeBurnGas,
-            .SystemRuntimeGetNetwork,
-            .SystemRuntimeGetRandom,
+            .SystemRuntimeCurrentSigners,
             .SystemStorageGetContext,
             .SystemStorageGetReadOnlyContext,
             .SystemStorageAsReadOnly,
@@ -186,6 +225,10 @@ pub const CompleteInteropService = enum {
             .SystemStorageFind,
             .SystemStoragePut,
             .SystemStorageDelete,
+            .SystemStorageLocalGet,
+            .SystemStorageLocalFind,
+            .SystemStorageLocalPut,
+            .SystemStorageLocalDelete,
         };
     }
 
@@ -231,8 +274,38 @@ pub const CompleteInteropService = enum {
             .SystemCryptoCheckSig, .SystemCryptoCheckMultisig => .Crypto,
             .SystemContractCall, .SystemContractCallNative, .SystemContractGetCallFlags, .SystemContractCreateStandardAccount, .SystemContractCreateMultiSigAccount, .SystemContractNativeOnPersist, .SystemContractNativePostPersist => .Contract,
             .SystemIteratorNext, .SystemIteratorValue => .Iterator,
-            .SystemRuntimePlatform, .SystemRuntimeGetTrigger, .SystemRuntimeGetTime, .SystemRuntimeGetScriptContainer, .SystemRuntimeGetExecutingScriptHash, .SystemRuntimeGetCallingScriptHash, .SystemRuntimeGetEntryScriptHash, .SystemRuntimeCheckWitness, .SystemRuntimeGetInvocationCounter, .SystemRuntimeLog, .SystemRuntimeNotify, .SystemRuntimeGetNotifications, .SystemRuntimeGasLeft, .SystemRuntimeBurnGas, .SystemRuntimeGetNetwork, .SystemRuntimeGetRandom => .Runtime,
-            .SystemStorageGetContext, .SystemStorageGetReadOnlyContext, .SystemStorageAsReadOnly, .SystemStorageGet, .SystemStorageFind, .SystemStoragePut, .SystemStorageDelete => .Storage,
+            .SystemRuntimePlatform,
+            .SystemRuntimeGetNetwork,
+            .SystemRuntimeGetAddressVersion,
+            .SystemRuntimeGetTrigger,
+            .SystemRuntimeGetTime,
+            .SystemRuntimeGetScriptContainer,
+            .SystemRuntimeGetExecutingScriptHash,
+            .SystemRuntimeGetCallingScriptHash,
+            .SystemRuntimeGetEntryScriptHash,
+            .SystemRuntimeLoadScript,
+            .SystemRuntimeCheckWitness,
+            .SystemRuntimeGetInvocationCounter,
+            .SystemRuntimeGetRandom,
+            .SystemRuntimeLog,
+            .SystemRuntimeNotify,
+            .SystemRuntimeGetNotifications,
+            .SystemRuntimeGasLeft,
+            .SystemRuntimeBurnGas,
+            .SystemRuntimeCurrentSigners,
+            => .Runtime,
+            .SystemStorageGetContext,
+            .SystemStorageGetReadOnlyContext,
+            .SystemStorageAsReadOnly,
+            .SystemStorageGet,
+            .SystemStorageFind,
+            .SystemStoragePut,
+            .SystemStorageDelete,
+            .SystemStorageLocalGet,
+            .SystemStorageLocalFind,
+            .SystemStorageLocalPut,
+            .SystemStorageLocalDelete,
+            => .Storage,
         };
     }
 
@@ -258,8 +331,11 @@ pub const CompleteInteropService = enum {
         return switch (self) {
             .SystemRuntimeCheckWitness => true,
             .SystemContractCall => true,
-            .SystemStoragePut => true,
-            .SystemStorageDelete => true,
+            .SystemStoragePut,
+            .SystemStorageDelete,
+            .SystemStorageLocalPut,
+            .SystemStorageLocalDelete,
+            => true,
             else => false,
         };
     }
@@ -267,7 +343,14 @@ pub const CompleteInteropService = enum {
     /// Checks if service modifies state
     pub fn modifiesState(self: Self) bool {
         return switch (self) {
-            .SystemStoragePut, .SystemStorageDelete, .SystemRuntimeNotify, .SystemRuntimeLog, .SystemRuntimeBurnGas => true,
+            .SystemStoragePut,
+            .SystemStorageDelete,
+            .SystemStorageLocalPut,
+            .SystemStorageLocalDelete,
+            .SystemRuntimeNotify,
+            .SystemRuntimeLog,
+            .SystemRuntimeBurnGas,
+            => true,
             else => false,
         };
     }
@@ -477,8 +560,8 @@ test "CompleteInteropService properties and operations" {
     try testing.expectEqualStrings("System.Storage.Get", CompleteInteropService.SystemStorageGet.getRawValue());
 
     // Test service pricing
-    try testing.expectEqual(@as(u32, 1024), CompleteInteropService.SystemCryptoCheckSig.getPrice());
-    try testing.expectEqual(@as(u32, 4096), CompleteInteropService.SystemCryptoCheckMultisig.getPrice());
+    try testing.expectEqual(@as(u32, 32768), CompleteInteropService.SystemCryptoCheckSig.getPrice());
+    try testing.expectEqual(@as(u32, 0), CompleteInteropService.SystemCryptoCheckMultisig.getPrice());
     try testing.expectEqual(@as(u32, 8), CompleteInteropService.SystemRuntimeGetTime.getPrice());
 
     // Test service categorization
@@ -563,20 +646,20 @@ test "InteropServiceUtils utility functions" {
 
     // Test execution cost calculation
     const test_services = [_]CompleteInteropService{
-        .SystemCryptoCheckSig, // 1024
-        .SystemContractCall, // 4096
-        .SystemStorageGet, // 64
+        .SystemCryptoCheckSig, // 32768
+        .SystemContractCall, // 32768
+        .SystemStorageGet, // 32768
     };
 
     const total_cost = InteropServiceUtils.calculateExecutionCost(&test_services);
-    try testing.expectEqual(@as(u64, 1024 + 4096 + 64), total_cost);
+    try testing.expectEqual(@as(u64, 32768 + 32768 + 32768), total_cost);
 }
 
 test "ServiceExecutionContext operations" {
     const testing = std.testing;
 
     // Test execution context
-    var context = ServiceExecutionContext.init(10000, true); // 10K gas, witness available
+    var context = ServiceExecutionContext.init(100000, true); // 100K gas, witness available
 
     // Test service execution capability
     try testing.expect(context.canExecuteService(.SystemRuntimeGetTime)); // Low cost, no witness
@@ -584,8 +667,8 @@ test "ServiceExecutionContext operations" {
     try testing.expect(context.canExecuteService(.SystemCryptoCheckSig)); // High cost but affordable
 
     // Test gas consumption
-    try context.consumeGas(.SystemCryptoCheckSig); // Consume 1024 gas
-    try testing.expectEqual(@as(u64, 10000 - 1024), context.available_gas);
+    try context.consumeGas(.SystemCryptoCheckSig); // Consume 32768 gas
+    try testing.expectEqual(@as(u64, 100000 - 32768), context.available_gas);
 
     // Test insufficient gas
     context.available_gas = 100; // Set low gas

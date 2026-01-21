@@ -35,3 +35,10 @@ Neo nodes differ slightly in `getversion` payloads (e.g., `wsport` may be omitte
 
 If you tighten parsing, prefer “optional + default” over hard-failing on missing keys unless the protocol guarantees the field.
 
+## Neo v3.9 Alignment
+
+Key v3.9 compatibility points in this SDK:
+
+- VM opcodes include `PUSHT`, `PUSHF`, `MODMUL`, `MODPOW`, `ABORTMSG`, `ASSERTMSG`.
+- Interop services and pricing match Neo 3.9 (e.g., `Runtime.GetAddressVersion`, `Runtime.LoadScript`, `Runtime.CurrentSigners`, `Storage.Local.*`).
+- `getversion` parsing includes hardfork metadata (`hardforks`, `standbycommittee`, `seedlist`).

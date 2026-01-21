@@ -19,21 +19,24 @@ pub const InteropService = enum {
     SystemIteratorNext,
     SystemIteratorValue,
     SystemRuntimePlatform,
+    SystemRuntimeGetNetwork,
+    SystemRuntimeGetAddressVersion,
     SystemRuntimeGetTrigger,
     SystemRuntimeGetTime,
     SystemRuntimeGetScriptContainer,
     SystemRuntimeGetExecutingScriptHash,
     SystemRuntimeGetCallingScriptHash,
     SystemRuntimeGetEntryScriptHash,
+    SystemRuntimeLoadScript,
     SystemRuntimeCheckWitness,
     SystemRuntimeGetInvocationCounter,
+    SystemRuntimeGetRandom,
     SystemRuntimeLog,
     SystemRuntimeNotify,
     SystemRuntimeGetNotifications,
     SystemRuntimeGasLeft,
     SystemRuntimeBurnGas,
-    SystemRuntimeGetNetwork,
-    SystemRuntimeGetRandom,
+    SystemRuntimeCurrentSigners,
     SystemStorageGetContext,
     SystemStorageGetReadOnlyContext,
     SystemStorageAsReadOnly,
@@ -41,6 +44,10 @@ pub const InteropService = enum {
     SystemStorageFind,
     SystemStoragePut,
     SystemStorageDelete,
+    SystemStorageLocalGet,
+    SystemStorageLocalFind,
+    SystemStorageLocalPut,
+    SystemStorageLocalDelete,
 
     /// Gets the string representation (equivalent to Swift rawValue)
     pub fn toString(self: InteropService) []const u8 {
@@ -57,21 +64,24 @@ pub const InteropService = enum {
             .SystemIteratorNext => "System.Iterator.Next",
             .SystemIteratorValue => "System.Iterator.Value",
             .SystemRuntimePlatform => "System.Runtime.Platform",
+            .SystemRuntimeGetNetwork => "System.Runtime.GetNetwork",
+            .SystemRuntimeGetAddressVersion => "System.Runtime.GetAddressVersion",
             .SystemRuntimeGetTrigger => "System.Runtime.GetTrigger",
             .SystemRuntimeGetTime => "System.Runtime.GetTime",
             .SystemRuntimeGetScriptContainer => "System.Runtime.GetScriptContainer",
             .SystemRuntimeGetExecutingScriptHash => "System.Runtime.GetExecutingScriptHash",
             .SystemRuntimeGetCallingScriptHash => "System.Runtime.GetCallingScriptHash",
             .SystemRuntimeGetEntryScriptHash => "System.Runtime.GetEntryScriptHash",
+            .SystemRuntimeLoadScript => "System.Runtime.LoadScript",
             .SystemRuntimeCheckWitness => "System.Runtime.CheckWitness",
             .SystemRuntimeGetInvocationCounter => "System.Runtime.GetInvocationCounter",
+            .SystemRuntimeGetRandom => "System.Runtime.GetRandom",
             .SystemRuntimeLog => "System.Runtime.Log",
             .SystemRuntimeNotify => "System.Runtime.Notify",
             .SystemRuntimeGetNotifications => "System.Runtime.GetNotifications",
             .SystemRuntimeGasLeft => "System.Runtime.GasLeft",
             .SystemRuntimeBurnGas => "System.Runtime.BurnGas",
-            .SystemRuntimeGetNetwork => "System.Runtime.GetNetwork",
-            .SystemRuntimeGetRandom => "System.Runtime.GetRandom",
+            .SystemRuntimeCurrentSigners => "System.Runtime.CurrentSigners",
             .SystemStorageGetContext => "System.Storage.GetContext",
             .SystemStorageGetReadOnlyContext => "System.Storage.GetReadOnlyContext",
             .SystemStorageAsReadOnly => "System.Storage.AsReadOnly",
@@ -79,6 +89,10 @@ pub const InteropService = enum {
             .SystemStorageFind => "System.Storage.Find",
             .SystemStoragePut => "System.Storage.Put",
             .SystemStorageDelete => "System.Storage.Delete",
+            .SystemStorageLocalGet => "System.Storage.Local.Get",
+            .SystemStorageLocalFind => "System.Storage.Local.Find",
+            .SystemStorageLocalPut => "System.Storage.Local.Put",
+            .SystemStorageLocalDelete => "System.Storage.Local.Delete",
         };
     }
 
@@ -96,15 +110,15 @@ pub const InteropService = enum {
     /// Gets the gas price for the interop service (equivalent to Swift price property)
     pub fn getPrice(self: InteropService) u32 {
         return switch (self) {
-            .SystemRuntimePlatform, .SystemRuntimeGetTrigger, .SystemRuntimeGetTime, .SystemRuntimeGetScriptContainer, .SystemRuntimeGetNetwork => 1 << 3, // 8 gas
+            .SystemRuntimePlatform, .SystemRuntimeGetNetwork, .SystemRuntimeGetAddressVersion, .SystemRuntimeGetTrigger, .SystemRuntimeGetTime, .SystemRuntimeGetScriptContainer => 1 << 3, // 8 gas
 
-            .SystemIteratorValue, .SystemRuntimeGetExecutingScriptHash, .SystemRuntimeGetCallingScriptHash, .SystemRuntimeGetEntryScriptHash, .SystemRuntimeGetInvocationCounter, .SystemRuntimeGasLeft, .SystemRuntimeBurnGas, .SystemRuntimeGetRandom, .SystemStorageGetContext, .SystemStorageGetReadOnlyContext, .SystemStorageAsReadOnly => 1 << 4, // 16 gas
+            .SystemIteratorValue, .SystemRuntimeGetExecutingScriptHash, .SystemRuntimeGetCallingScriptHash, .SystemRuntimeGetEntryScriptHash, .SystemRuntimeGetInvocationCounter, .SystemRuntimeGasLeft, .SystemRuntimeBurnGas, .SystemRuntimeCurrentSigners, .SystemStorageGetContext, .SystemStorageGetReadOnlyContext, .SystemStorageAsReadOnly => 1 << 4, // 16 gas
 
             .SystemContractGetCallFlags, .SystemRuntimeCheckWitness => 1 << 10, // 1024 gas
 
             .SystemRuntimeGetNotifications => 1 << 12, // 4096 gas
 
-            .SystemCryptoCheckSig, .SystemContractCall, .SystemContractCreateStandardAccount, .SystemIteratorNext, .SystemRuntimeLog, .SystemRuntimeNotify, .SystemStorageGet, .SystemStorageFind, .SystemStoragePut, .SystemStorageDelete => 1 << 15, // 32768 gas
+            .SystemCryptoCheckSig, .SystemContractCall, .SystemIteratorNext, .SystemRuntimeLoadScript, .SystemRuntimeLog, .SystemRuntimeNotify, .SystemStorageGet, .SystemStorageFind, .SystemStoragePut, .SystemStorageDelete, .SystemStorageLocalGet, .SystemStorageLocalFind, .SystemStorageLocalPut, .SystemStorageLocalDelete => 1 << 15, // 32768 gas
 
             else => 0, // Default price for unlisted services
         };
@@ -125,21 +139,24 @@ pub const InteropService = enum {
             .SystemIteratorNext,
             .SystemIteratorValue,
             .SystemRuntimePlatform,
+            .SystemRuntimeGetNetwork,
+            .SystemRuntimeGetAddressVersion,
             .SystemRuntimeGetTrigger,
             .SystemRuntimeGetTime,
             .SystemRuntimeGetScriptContainer,
             .SystemRuntimeGetExecutingScriptHash,
             .SystemRuntimeGetCallingScriptHash,
             .SystemRuntimeGetEntryScriptHash,
+            .SystemRuntimeLoadScript,
             .SystemRuntimeCheckWitness,
             .SystemRuntimeGetInvocationCounter,
+            .SystemRuntimeGetRandom,
             .SystemRuntimeLog,
             .SystemRuntimeNotify,
             .SystemRuntimeGetNotifications,
             .SystemRuntimeGasLeft,
             .SystemRuntimeBurnGas,
-            .SystemRuntimeGetNetwork,
-            .SystemRuntimeGetRandom,
+            .SystemRuntimeCurrentSigners,
             .SystemStorageGetContext,
             .SystemStorageGetReadOnlyContext,
             .SystemStorageAsReadOnly,
@@ -147,6 +164,10 @@ pub const InteropService = enum {
             .SystemStorageFind,
             .SystemStoragePut,
             .SystemStorageDelete,
+            .SystemStorageLocalGet,
+            .SystemStorageLocalFind,
+            .SystemStorageLocalPut,
+            .SystemStorageLocalDelete,
         };
 
         for (services) |service| {
@@ -173,21 +194,24 @@ pub const InteropService = enum {
             .SystemIteratorNext,
             .SystemIteratorValue,
             .SystemRuntimePlatform,
+            .SystemRuntimeGetNetwork,
+            .SystemRuntimeGetAddressVersion,
             .SystemRuntimeGetTrigger,
             .SystemRuntimeGetTime,
             .SystemRuntimeGetScriptContainer,
             .SystemRuntimeGetExecutingScriptHash,
             .SystemRuntimeGetCallingScriptHash,
             .SystemRuntimeGetEntryScriptHash,
+            .SystemRuntimeLoadScript,
             .SystemRuntimeCheckWitness,
             .SystemRuntimeGetInvocationCounter,
+            .SystemRuntimeGetRandom,
             .SystemRuntimeLog,
             .SystemRuntimeNotify,
             .SystemRuntimeGetNotifications,
             .SystemRuntimeGasLeft,
             .SystemRuntimeBurnGas,
-            .SystemRuntimeGetNetwork,
-            .SystemRuntimeGetRandom,
+            .SystemRuntimeCurrentSigners,
             .SystemStorageGetContext,
             .SystemStorageGetReadOnlyContext,
             .SystemStorageAsReadOnly,
@@ -195,6 +219,10 @@ pub const InteropService = enum {
             .SystemStorageFind,
             .SystemStoragePut,
             .SystemStorageDelete,
+            .SystemStorageLocalGet,
+            .SystemStorageLocalFind,
+            .SystemStorageLocalPut,
+            .SystemStorageLocalDelete,
         };
 
         return &services;

@@ -178,7 +178,7 @@ test "Push boolean values" {
     defer builder_true.deinit();
     
     _ = try builder_true.pushBoolean(true);
-    const expected_true = [_]u8{@intFromEnum(OpCode.PUSH1)}; // TRUE = PUSH1
+    const expected_true = [_]u8{@intFromEnum(OpCode.PUSHT)}; // TRUE = PUSHT
     try assertBuilderBytes(&builder_true, &expected_true);
     
     // Test false value
@@ -186,7 +186,7 @@ test "Push boolean values" {
     defer builder_false.deinit();
     
     _ = try builder_false.pushBoolean(false);
-    const expected_false = [_]u8{@intFromEnum(OpCode.PUSH0)}; // FALSE = PUSH0
+    const expected_false = [_]u8{@intFromEnum(OpCode.PUSHF)}; // FALSE = PUSHF
     try assertBuilderBytes(&builder_false, &expected_false);
 }
 

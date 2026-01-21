@@ -14,6 +14,8 @@ pub const OpCode = enum(u8) {
     PUSHINT64 = 0x03,
     PUSHINT128 = 0x04,
     PUSHINT256 = 0x05,
+    PUSHT = 0x08,
+    PUSHF = 0x09,
     PUSHA = 0x0A,
     PUSHNULL = 0x0B,
     PUSHDATA1 = 0x0C,
@@ -172,6 +174,8 @@ pub const OpCode = enum(u8) {
     MOD = 0xA2,
     POW = 0xA3,
     SQRT = 0xA4,
+    MODMUL = 0xA5,
+    MODPOW = 0xA6,
     SHL = 0xA8,
     SHR = 0xA9,
     NOT = 0xAA,
@@ -214,6 +218,8 @@ pub const OpCode = enum(u8) {
     ISNULL = 0xD8,
     ISTYPE = 0xD9,
     CONVERT = 0xDB,
+    ABORTMSG = 0xE0,
+    ASSERTMSG = 0xE1,
 
     /// Gets opcode value (equivalent to Swift .opcode property)
     pub fn getOpcode(self: OpCode) u8 {
