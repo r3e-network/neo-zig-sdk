@@ -17,7 +17,7 @@ test "Role management contract creation" {
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const role_management = RoleManagement.init(neo_swift);
+    const role_management = RoleManagement.init(allocator, &neo_swift);
     
     try role_management.validate();
     try testing.expect(role_management.isNativeContract());

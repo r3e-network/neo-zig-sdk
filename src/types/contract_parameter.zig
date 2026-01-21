@@ -135,6 +135,75 @@ pub const ContractParameter = union(ContractParameterType) {
         }
     }
 
+    /// Frees allocator-owned memory within this parameter.
+    /// Call only for parameters created with allocator-owned data.
+    pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .ByteArray => |bytes| if (bytes.len > 0) allocator.free(@constCast(bytes)),
+            .String => |str| if (str.len > 0) allocator.free(@constCast(str)),
+            .Array => |items| {
+                for (items) |item| {
+                    item.deinit(allocator);
+                }
+                if (items.len > 0) allocator.free(@constCast(items));
+            },
+            .Map => |map| {
+                var mutable_map = map;
+                var it = mutable_map.iterator();
+                while (it.next()) |entry| {
+                    entry.key_ptr.*.deinit(allocator);
+                    entry.value_ptr.*.deinit(allocator);
+                }
+                mutable_map.deinit();
+            },
+            else => {},
+        }
+    }
+
+    /// Deep clone with allocator-owned memory.
+    pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
+        return switch (self) {
+            .Any => Self{ .Any = {} },
+            .Void => Self{ .Void = {} },
+            .Boolean => |value| Self.boolean(value),
+            .Integer => |value| Self.integer(value),
+            .ByteArray => |bytes| Self.byteArray(try allocator.dupe(u8, bytes)),
+            .String => |str| Self.string(try allocator.dupe(u8, str)),
+            .Hash160 => |hash| Self.hash160(hash),
+            .Hash256 => |hash| Self.hash256(hash),
+            .PublicKey => |key| Self{ .PublicKey = key },
+            .Signature => |sig| Self{ .Signature = sig },
+            .Array => |items| blk: {
+                var cloned_items = try allocator.alloc(ContractParameter, items.len);
+                var count: usize = 0;
+                errdefer {
+                    for (cloned_items[0..count]) |item| item.deinit(allocator);
+                    allocator.free(cloned_items);
+                }
+                for (items) |item| {
+                    cloned_items[count] = try item.clone(allocator);
+                    count += 1;
+                }
+                break :blk Self.array(cloned_items);
+            },
+            .Map => |map| blk: {
+                var cloned_map = std.HashMap(ContractParameter, ContractParameter, ContractParameterContext, std.hash_map.default_max_load_percentage).init(allocator);
+                errdefer cloned_map.deinit();
+
+                var it = map.iterator();
+                while (it.next()) |entry| {
+                    const key_clone = try entry.key_ptr.*.clone(allocator);
+                    errdefer key_clone.deinit(allocator);
+                    const value_clone = try entry.value_ptr.*.clone(allocator);
+                    errdefer value_clone.deinit(allocator);
+                    try cloned_map.put(key_clone, value_clone);
+                }
+                break :blk Self{ .Map = cloned_map };
+            },
+            .InteropInterface => |iface| Self{ .InteropInterface = iface },
+        };
+    }
+
     pub fn eql(self: Self, other: Self) bool {
         if (self.getType() != other.getType()) return false;
         return switch (self) {

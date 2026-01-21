@@ -13,7 +13,9 @@ const ContractParameter = @import("../types/contract_parameter.zig").ContractPar
 const ScriptBuilder = @import("../script/script_builder.zig").ScriptBuilder;
 const TransactionBuilder = @import("../transaction/transaction_builder.zig").TransactionBuilder;
 const NeoSwift = @import("../rpc/neo_client.zig").NeoSwift;
+const NeoProtocol = @import("../protocol/neo_protocol.zig").NeoProtocol;
 const Signer = @import("../transaction/transaction_builder.zig").Signer;
+const responses = @import("../rpc/responses.zig");
 
 /// Smart contract representation (converted from Swift SmartContract)
 pub const SmartContract = struct {
@@ -40,6 +42,18 @@ pub const SmartContract = struct {
     /// Gets contract script hash
     pub fn getScriptHash(self: Self) Hash160 {
         return self.script_hash;
+    }
+
+    /// Validates that the contract has a usable script hash.
+    pub fn validate(self: Self) !void {
+        if (self.script_hash.eql(Hash160.ZERO)) {
+            return errors.ContractError.InvalidContract;
+        }
+    }
+
+    /// Returns true if this script hash matches a native contract.
+    pub fn isNativeContract(self: Self) bool {
+        return isNativeScriptHash(self.script_hash);
     }
 
     /// Invokes contract function (equivalent to Swift invokeFunction)
@@ -73,15 +87,28 @@ pub const SmartContract = struct {
         return try self.allocator.dupe(u8, builder.toScript());
     }
 
+    /// Validates invocation method name and parameters before building scripts.
+    pub fn validateInvocation(self: Self, function_name: []const u8, params: []const ContractParameter) !void {
+        _ = self;
+        _ = params;
+
+        if (function_name.len == 0) {
+            return errors.throwIllegalArgument("The invocation function must not be empty");
+        }
+
+        for (function_name) |ch| {
+            if (std.ascii.isWhitespace(ch)) {
+                return errors.throwIllegalArgument("The invocation function must not contain whitespace");
+            }
+        }
+    }
+
     /// Calls function returning string (equivalent to Swift callFunctionReturningString)
     pub fn callFunctionReturningString(
         self: Self,
         function_name: []const u8,
         params: []const ContractParameter,
     ) ![]u8 {
-        if (self.neo_swift == null) {
-            return try self.allocator.dupe(u8, "UNKNOWN");
-        }
         const neo_swift = try self.getNeoSwift();
         var request = try neo_swift.invokeFunction(self.script_hash, function_name, params, &[_]Signer{});
         var invocation = try request.send();
@@ -102,9 +129,6 @@ pub const SmartContract = struct {
         function_name: []const u8,
         params: []const ContractParameter,
     ) !i64 {
-        if (self.neo_swift == null) {
-            return 0;
-        }
         const neo_swift = try self.getNeoSwift();
         var request = try neo_swift.invokeFunction(self.script_hash, function_name, params, &[_]Signer{});
         var invocation = try request.send();
@@ -125,9 +149,6 @@ pub const SmartContract = struct {
         function_name: []const u8,
         params: []const ContractParameter,
     ) !bool {
-        if (self.neo_swift == null) {
-            return false;
-        }
         const neo_swift = try self.getNeoSwift();
         var request = try neo_swift.invokeFunction(self.script_hash, function_name, params, &[_]Signer{});
         var invocation = try request.send();
@@ -149,9 +170,6 @@ pub const SmartContract = struct {
         function_name: []const u8,
         params: []const ContractParameter,
     ) !Hash160 {
-        if (self.neo_swift == null) {
-            return Hash160.ZERO;
-        }
         const neo_swift = try self.getNeoSwift();
         var request = try neo_swift.invokeFunction(self.script_hash, function_name, params, &[_]Signer{});
         var invocation = try request.send();
@@ -183,16 +201,33 @@ pub const SmartContract = struct {
 
     /// Gets contract manifest (equivalent to Swift getManifest)
     pub fn getManifest(self: Self) !ContractManifest {
-        // This would make actual RPC call in production
-        _ = self;
-        return ContractManifest.init();
+        const neo_swift = try self.getNeoSwift();
+        var protocol = NeoProtocol.init(neo_swift.getService());
+        var request = try protocol.getContractState(self.script_hash);
+        var response = try request.sendUsing(protocol.service);
+        const service_allocator = neo_swift.getService().getAllocator();
+        defer response.deinit(service_allocator);
+
+        var state = response.result orelse return errors.ContractError.InvalidContractState;
+        response.result = null;
+        const manifest = state.manifest;
+        state.manifest = ContractManifest.init();
+        state.deinit(service_allocator);
+        return manifest;
     }
 
     /// Gets contract state (equivalent to Swift getContractState)
     pub fn getContractState(self: Self) !ContractState {
-        // This would make actual RPC call in production
-        _ = self;
-        return ContractState.init();
+        const neo_swift = try self.getNeoSwift();
+        var protocol = NeoProtocol.init(neo_swift.getService());
+        var request = try protocol.getContractState(self.script_hash);
+        var response = try request.sendUsing(protocol.service);
+        const service_allocator = neo_swift.getService().getAllocator();
+        defer response.deinit(service_allocator);
+
+        const state = response.result orelse return errors.ContractError.InvalidContractState;
+        response.result = null;
+        return state;
     }
 
     pub fn hasClient(self: Self) bool {
@@ -205,146 +240,29 @@ pub const SmartContract = struct {
     }
 };
 
-/// Contract manifest (converted from Swift ContractManifest)
-pub const ContractManifest = struct {
-    name: []const u8,
-    groups: []const ContractGroup,
-    features: ContractFeatures,
-    supported_standards: []const []const u8,
-    abi: ContractABI,
-    permissions: []const ContractPermission,
-    trusts: []const Hash160,
-    extra: ?[]const u8,
+fn isNativeScriptHash(script_hash: Hash160) bool {
+    return script_hash.eql(Hash160{ .bytes = constants.NativeContracts.CONTRACT_MANAGEMENT }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.STD_LIB }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.CRYPTO_LIB }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.LEDGER_CONTRACT }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.NEO_TOKEN }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.GAS_TOKEN }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.POLICY_CONTRACT }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.ROLE_MANAGEMENT }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.ORACLE_CONTRACT }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.NOTARY }) or
+        script_hash.eql(Hash160{ .bytes = constants.NativeContracts.TREASURY });
+}
 
-    const Self = @This();
-
-    pub fn init() Self {
-        return Self{
-            .name = "",
-            .groups = &[_]ContractGroup{},
-            .features = ContractFeatures.init(),
-            .supported_standards = &[_][]const u8{},
-            .abi = ContractABI.init(),
-            .permissions = &[_]ContractPermission{},
-            .trusts = &[_]Hash160{},
-            .extra = null,
-        };
-    }
-};
-
-/// Contract state (converted from Swift ContractState)
-pub const ContractState = struct {
-    id: i32,
-    update_counter: u32,
-    hash: Hash160,
-    nef: ContractNef,
-    manifest: ContractManifest,
-
-    pub fn init() ContractState {
-        return ContractState{
-            .id = 0,
-            .update_counter = 0,
-            .hash = Hash160.ZERO,
-            .nef = ContractNef.init(),
-            .manifest = ContractManifest.init(),
-        };
-    }
-};
-
-/// Contract NEF (converted from Swift ContractNef)
-pub const ContractNef = struct {
-    magic: u32,
-    compiler: []const u8,
-    source: []const u8,
-    script: []const u8,
-    checksum: u32,
-
-    pub fn init() ContractNef {
-        return ContractNef{
-            .magic = 0x3346454E, // "NEF3"
-            .compiler = "",
-            .source = "",
-            .script = &[_]u8{},
-            .checksum = 0,
-        };
-    }
-};
-
-/// Supporting types (stubs for full implementation)
-pub const ContractGroup = struct {
-    public_key: [33]u8,
-    signature: [64]u8,
-
-    pub fn init() ContractGroup {
-        return ContractGroup{
-            .public_key = std.mem.zeroes([33]u8),
-            .signature = std.mem.zeroes([64]u8),
-        };
-    }
-};
-
-pub const ContractFeatures = struct {
-    storage: bool,
-    payable: bool,
-
-    pub fn init() ContractFeatures {
-        return ContractFeatures{ .storage = false, .payable = false };
-    }
-};
-
-pub const ContractABI = struct {
-    methods: []const ContractMethod,
-    events: []const ContractEvent,
-
-    pub fn init() ContractABI {
-        return ContractABI{
-            .methods = &[_]ContractMethod{},
-            .events = &[_]ContractEvent{},
-        };
-    }
-};
-
-pub const ContractMethod = struct {
-    name: []const u8,
-    parameters: []const ContractParameter,
-    return_type: []const u8,
-    offset: u32,
-    safe: bool,
-
-    pub fn init() ContractMethod {
-        return ContractMethod{
-            .name = "",
-            .parameters = &[_]ContractParameter{},
-            .return_type = "Any",
-            .offset = 0,
-            .safe = false,
-        };
-    }
-};
-
-pub const ContractEvent = struct {
-    name: []const u8,
-    parameters: []const ContractParameter,
-
-    pub fn init() ContractEvent {
-        return ContractEvent{
-            .name = "",
-            .parameters = &[_]ContractParameter{},
-        };
-    }
-};
-
-pub const ContractPermission = struct {
-    contract: Hash160,
-    methods: []const []const u8,
-
-    pub fn init() ContractPermission {
-        return ContractPermission{
-            .contract = Hash160.ZERO,
-            .methods = &[_][]const u8{},
-        };
-    }
-};
+pub const ContractManifest = responses.ContractManifest;
+pub const ContractState = responses.ContractState;
+pub const ContractNef = responses.ContractNef;
+pub const ContractGroup = responses.ContractGroup;
+pub const ContractFeatures = responses.ContractFeatures;
+pub const ContractABI = responses.ContractABI;
+pub const ContractMethod = responses.ContractMethod;
+pub const ContractEvent = responses.ContractEvent;
+pub const ContractPermission = responses.ContractPermission;
 
 // Tests (converted from Swift SmartContract tests)
 test "SmartContract creation and basic operations" {

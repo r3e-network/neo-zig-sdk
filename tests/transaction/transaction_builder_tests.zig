@@ -33,10 +33,11 @@ test "TransactionBuilder.sign creates witness scripts" {
     defer builder.deinit();
 
     const private_key = neo.crypto.PrivateKey.generate();
-    const account = try neo.transaction.Account.initWithPrivateKey(private_key, true, allocator);
+    var account = try neo.transaction.Account.initWithPrivateKey(private_key, true, allocator);
+    defer account.deinit();
 
     _ = try builder.validUntilBlock(1234);
-    _ = try builder.signer(neo.transaction.Signer.init(account.getScriptHash(), neo.transaction.WitnessScope.CalledByEntry));
+    _ = try builder.signer(neo.transaction.Signer.init(try account.getScriptHash(), neo.transaction.WitnessScope.CalledByEntry));
     _ = try builder.script(&[_]u8{ 0x01, 0x02, 0x03 });
 
     var tx = try builder.sign(&[_]neo.transaction.Account{account}, 5195086);
@@ -61,15 +62,17 @@ test "TransactionBuilder.sign rejects signer/account mismatches" {
     const allocator = testing.allocator;
 
     const private_key_a = neo.crypto.PrivateKey.generate();
-    const account_a = try neo.transaction.Account.initWithPrivateKey(private_key_a, true, allocator);
+    var account_a = try neo.transaction.Account.initWithPrivateKey(private_key_a, true, allocator);
+    defer account_a.deinit();
     const private_key_b = neo.crypto.PrivateKey.generate();
-    const account_b = try neo.transaction.Account.initWithPrivateKey(private_key_b, true, allocator);
+    var account_b = try neo.transaction.Account.initWithPrivateKey(private_key_b, true, allocator);
+    defer account_b.deinit();
 
     {
         var builder = neo.transaction.TransactionBuilder.init(allocator);
         defer builder.deinit();
 
-        _ = try builder.signer(neo.transaction.Signer.init(account_a.getScriptHash(), neo.transaction.WitnessScope.CalledByEntry));
+        _ = try builder.signer(neo.transaction.Signer.init(try account_a.getScriptHash(), neo.transaction.WitnessScope.CalledByEntry));
         _ = try builder.script(&[_]u8{0x01});
 
         try testing.expectError(neo.errors.TransactionError.InvalidSigner, builder.sign(&[_]neo.transaction.Account{account_b}, 1));
@@ -79,7 +82,7 @@ test "TransactionBuilder.sign rejects signer/account mismatches" {
         var builder = neo.transaction.TransactionBuilder.init(allocator);
         defer builder.deinit();
 
-        _ = try builder.signer(neo.transaction.Signer.init(account_a.getScriptHash(), neo.transaction.WitnessScope.CalledByEntry));
+        _ = try builder.signer(neo.transaction.Signer.init(try account_a.getScriptHash(), neo.transaction.WitnessScope.CalledByEntry));
         _ = try builder.script(&[_]u8{0x01});
 
         try testing.expectError(neo.errors.TransactionError.InvalidSigner, builder.sign(&[_]neo.transaction.Account{}, 1));
@@ -146,4 +149,33 @@ test "TransactionBuilder.signers and attributes handle self-sourced slices" {
     _ = try builder.attributes(builder.attributes_list.items);
     try testing.expectEqual(@as(usize, 1), builder.attributes_list.items.len);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xAA, 0xBB }, builder.attributes_list.items[0].data);
+}
+
+test "TransactionBuilder attribute helpers" {
+    const allocator = testing.allocator;
+
+    var builder = neo.transaction.TransactionBuilder.init(allocator);
+    defer builder.deinit();
+
+    _ = try builder.notValidBefore(42);
+
+    const conflict_hash = try neo.Hash256.initWithString("0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    _ = try builder.conflicts(conflict_hash);
+
+    _ = try builder.notaryAssisted(3);
+
+    try testing.expectEqual(@as(usize, 3), builder.attributes_list.items.len);
+
+    const height_bytes = std.mem.toBytes(std.mem.nativeToLittle(u32, 42));
+    try testing.expectEqual(neo.transaction.AttributeType.NotValidBefore, builder.attributes_list.items[0].attribute_type);
+    try testing.expectEqualSlices(u8, height_bytes[0..], builder.attributes_list.items[0].data);
+    try testing.expectEqual(@as(u32, 42), try builder.attributes_list.items[0].getNotValidBeforeHeight());
+
+    const conflict_bytes = conflict_hash.toLittleEndianArray();
+    try testing.expectEqual(neo.transaction.AttributeType.Conflicts, builder.attributes_list.items[1].attribute_type);
+    try testing.expectEqualSlices(u8, conflict_bytes[0..], builder.attributes_list.items[1].data);
+    try testing.expect((try builder.attributes_list.items[1].getConflictsHash()).eql(conflict_hash));
+
+    try testing.expectEqual(neo.transaction.AttributeType.NotaryAssisted, builder.attributes_list.items[2].attribute_type);
+    try testing.expectEqual(@as(u8, 3), try builder.attributes_list.items[2].getNotaryAssistedNKeys());
 }

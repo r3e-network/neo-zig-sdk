@@ -18,7 +18,7 @@ test "Token base functionality" {
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
     const token_hash = try Hash160.initWithString("0x1234567890abcdef1234567890abcdef12345678");
-    const token = Token.init(token_hash, neo_swift);
+    const token = Token.init(allocator, token_hash, &neo_swift);
     
     try testing.expect(token.getScriptHash().eql(token_hash));
     try token.validate();

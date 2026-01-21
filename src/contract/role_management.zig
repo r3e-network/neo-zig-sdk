@@ -13,6 +13,8 @@ const ContractParameter = @import("../types/contract_parameter.zig").ContractPar
 const SmartContract = @import("smart_contract.zig").SmartContract;
 const TransactionBuilder = @import("../transaction/transaction_builder.zig").TransactionBuilder;
 const PublicKey = @import("../crypto/keys.zig").PublicKey;
+const NeoSwift = @import("../rpc/neo_client.zig").NeoSwift;
+const Signer = @import("../transaction/transaction_builder.zig").Signer;
 
 /// Role management contract (converted from Swift RoleManagement)
 pub const RoleManagement = struct {
@@ -38,6 +40,24 @@ pub const RoleManagement = struct {
         };
     }
 
+    /// Gets script hash for this contract.
+    pub fn getScriptHash(self: Self) Hash160 {
+        return self.smart_contract.getScriptHash();
+    }
+
+    /// Validates the underlying contract configuration.
+    pub fn validate(self: Self) !void {
+        try self.smart_contract.validate();
+        if (!self.smart_contract.getScriptHash().eql(SCRIPT_HASH)) {
+            return errors.ContractError.InvalidContract;
+        }
+    }
+
+    /// Returns true if this contract is native.
+    pub fn isNativeContract(self: Self) bool {
+        return self.smart_contract.isNativeContract();
+    }
+
     /// Gets designated nodes by role (equivalent to Swift getDesignatedByRole)
     pub fn getDesignatedByRole(self: Self, role: Role, block_index: u32) ![]PublicKey {
         try self.checkBlockIndexValidity(block_index);
@@ -47,9 +67,37 @@ pub const RoleManagement = struct {
             ContractParameter.integer(@intCast(block_index)),
         };
 
-        // This would make actual RPC call and parse public keys
-        _ = params;
-        return try self.smart_contract.allocator.alloc(PublicKey, 0);
+        if (self.smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
+
+        const neo_swift: *NeoSwift = @ptrCast(@alignCast(self.smart_contract.neo_swift.?));
+        var request = try neo_swift.invokeFunction(
+            SCRIPT_HASH,
+            GET_DESIGNATED_BY_ROLE,
+            &params,
+            &[_]Signer{},
+        );
+        var invocation = try request.send();
+        const service_allocator = neo_swift.getService().getAllocator();
+        defer invocation.deinit(service_allocator);
+
+        if (invocation.hasFaulted()) {
+            return errors.ContractError.ContractExecutionFailed;
+        }
+
+        const stack_item = try invocation.getFirstStackItem();
+        const items = try stack_item.getArray();
+        var keys = try self.smart_contract.allocator.alloc(PublicKey, items.len);
+        errdefer self.smart_contract.allocator.free(keys);
+
+        for (items, 0..) |item, i| {
+            const bytes = switch (item) {
+                .ByteString, .Buffer => |b| b,
+                else => return errors.SerializationError.InvalidFormat,
+            };
+            keys[i] = try PublicKey.initFromBytes(bytes);
+        }
+
+        return keys;
     }
 
     /// Validates block index (equivalent to Swift checkBlockIndexValidity)

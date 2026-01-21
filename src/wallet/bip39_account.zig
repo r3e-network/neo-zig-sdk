@@ -10,11 +10,10 @@ const constants = @import("../core/constants.zig");
 const errors = @import("../core/errors.zig");
 const Hash160 = @import("../types/hash160.zig").Hash160;
 const Hash256 = @import("../types/hash256.zig").Hash256;
-const Address = @import("../types/address.zig").Address;
 const PrivateKey = @import("../crypto/keys.zig").PrivateKey;
 const PublicKey = @import("../crypto/keys.zig").PublicKey;
 const KeyPair = @import("../crypto/keys.zig").KeyPair;
-const Account = @import("../transaction/transaction_builder.zig").Account;
+const Account = @import("account.zig").Account;
 const secure = @import("../utils/secure.zig");
 
 /// BIP-39 compatible Neo account (converted from Swift Bip39Account)
@@ -32,8 +31,7 @@ pub const Bip39Account = struct {
 
     /// Creates BIP-39 account (equivalent to Swift private init)
     fn initPrivate(allocator: std.mem.Allocator, key_pair: KeyPair, mnemonic: []const u8, bip32_node: @import("../crypto/bip32.zig").Bip32ECKeyPair) !Self {
-        const address = try key_pair.public_key.toAddress(constants.AddressConstants.ADDRESS_VERSION);
-        const account = Account.fromKeyPair(key_pair, address);
+        const account = try Account.fromKeyPair(key_pair, allocator);
 
         return Self{
             .mnemonic = try allocator.dupe(u8, mnemonic),
@@ -45,9 +43,7 @@ pub const Bip39Account = struct {
 
     /// Cleanup resources
     pub fn deinit(self: *Self) void {
-        if (self.account.private_key) |*pk| {
-            pk.zeroize();
-        }
+        self.account.deinit();
         self.bip32_node.deinit();
 
         secure.secureZeroConstBytes(self.mnemonic);
@@ -128,14 +124,19 @@ pub const Bip39Account = struct {
         return self.mnemonic;
     }
 
-    /// Gets account (equivalent to Swift base account access)
+    /// Gets account (borrowed copy; do not deinit).
     pub fn getAccount(self: Self) Account {
         return self.account;
     }
 
+    /// Clones the underlying account with owned memory.
+    pub fn cloneAccount(self: Self, allocator: std.mem.Allocator) !Account {
+        return try self.account.clone(allocator);
+    }
+
     /// Gets script hash (equivalent to Swift script hash access)
-    pub fn getScriptHash(self: Self) Hash160 {
-        return self.account.getScriptHash();
+    pub fn getScriptHash(self: Self) !Hash160 {
+        return try self.account.getScriptHash();
     }
 
     /// Gets address (equivalent to Swift address access)
@@ -361,7 +362,7 @@ test "Bip39Account creation and mnemonic generation" {
     try testing.expect(validateMnemonic(mnemonic));
 
     // Test account properties
-    const script_hash = bip39_account.getScriptHash();
+    const script_hash = try bip39_account.getScriptHash();
     try testing.expect(!script_hash.eql(Hash160.ZERO));
 
     const address = try bip39_account.getAddress(allocator);
@@ -378,7 +379,7 @@ test "Bip39Account recovery from mnemonic" {
     defer original_account.deinit();
 
     const original_mnemonic = original_account.getMnemonic();
-    const original_script_hash = original_account.getScriptHash();
+    const original_script_hash = try original_account.getScriptHash();
 
     // Recover account from mnemonic (equivalent to Swift fromBip39Mnemonic tests)
     var recovered_account = try Bip39Account.fromBip39Mnemonic(
@@ -389,7 +390,7 @@ test "Bip39Account recovery from mnemonic" {
     defer recovered_account.deinit();
 
     // Should have same script hash
-    try testing.expect(original_script_hash.eql(recovered_account.getScriptHash()));
+    try testing.expect(original_script_hash.eql(try recovered_account.getScriptHash()));
 
     // Should have same mnemonic
     try testing.expectEqualStrings(original_mnemonic, recovered_account.getMnemonic());
@@ -407,7 +408,7 @@ test "Bip39Account child derivation" {
     defer child_account.deinit();
 
     // Child should be different from parent
-    try testing.expect(!parent_account.getScriptHash().eql(child_account.getScriptHash()));
+    try testing.expect(!(try parent_account.getScriptHash()).eql(try child_account.getScriptHash()));
 
     // Child should have same mnemonic (shares same seed)
     try testing.expectEqualStrings(parent_account.getMnemonic(), child_account.getMnemonic());
@@ -515,7 +516,7 @@ test "Bip39Account deterministic NeoSwift vector" {
     try testing.expectEqualSlices(u8, &expected_script, verification_script);
 
     const expected_script_hash = try Hash160.fromHex("a8ddd585d807694285e4b048d090b3cf5b2888ec");
-    try testing.expect(bip39_account.getScriptHash().eql(expected_script_hash));
+    try testing.expect((try bip39_account.getScriptHash()).eql(expected_script_hash));
 
     const address = try bip39_account.getAddress(allocator);
     defer allocator.free(address);

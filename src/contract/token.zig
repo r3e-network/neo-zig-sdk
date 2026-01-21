@@ -32,19 +32,11 @@ pub const Token = struct {
 
     /// Gets token symbol (equivalent to Swift getSymbol())
     pub fn getSymbol(self: Self) ![]u8 {
-        return self.smart_contract.callFunctionReturningString(SYMBOL, &[_]ContractParameter{}) catch |err| {
-            if (err == errors.ContractError.ContractExecutionFailed) {
-                return try self.smart_contract.allocator.dupe(u8, "UNKNOWN");
-            }
-            return err;
-        };
+        return try self.smart_contract.callFunctionReturningString(SYMBOL, &[_]ContractParameter{});
     }
 
     /// Gets token decimals (equivalent to Swift getDecimals())
     pub fn getDecimals(self: Self) !u8 {
-        if (!self.smart_contract.hasClient()) {
-            return 8;
-        }
         const decimals_result = try self.smart_contract.callFunctionReturningInt(DECIMALS, &[_]ContractParameter{});
         return @intCast(decimals_result);
     }
@@ -57,6 +49,28 @@ pub const Token = struct {
     /// Gets script hash (equivalent to Swift scriptHash property)
     pub fn getScriptHash(self: Self) Hash160 {
         return self.smart_contract.getScriptHash();
+    }
+
+    /// Validates that the token has a usable script hash.
+    pub fn validate(self: Self) !void {
+        return self.smart_contract.validate();
+    }
+
+    /// Returns true if this token is backed by a native contract.
+    pub fn isNativeContract(self: Self) bool {
+        return self.smart_contract.isNativeContract();
+    }
+
+    /// Converts an amount into fractional units based on decimals.
+    pub fn toFractions(amount: f64, decimals: u32) u64 {
+        const multiplier = std.math.pow(f64, 10.0, @floatFromInt(decimals));
+        return @intFromFloat(amount * multiplier);
+    }
+
+    /// Converts fractional units into a decimal amount based on decimals.
+    pub fn fromFractions(fractions: u64, decimals: u32) f64 {
+        const divisor = std.math.pow(f64, 10.0, @floatFromInt(decimals));
+        return @as(f64, @floatFromInt(fractions)) / divisor;
     }
 };
 
@@ -79,13 +93,7 @@ test "Token information methods" {
     const token_hash = Hash160.ZERO;
     const token = Token.init(allocator, token_hash, null);
 
-    const symbol = try token.getSymbol();
-    defer allocator.free(symbol);
-    try testing.expectEqualStrings("UNKNOWN", symbol);
-
-    const decimals = try token.getDecimals();
-    try testing.expectEqual(@as(u8, 8), decimals);
-
-    const total_supply = try token.getTotalSupply();
-    try testing.expect(total_supply >= 0);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, token.getSymbol());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, token.getDecimals());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, token.getTotalSupply());
 }

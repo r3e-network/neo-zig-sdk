@@ -56,7 +56,7 @@ test "NNS service functionality" {
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
     const nns_hash = try Hash160.initWithString("0x50ac1c37690cc2cfc594472833cf57505d5f46de");
-    const nns = NeoNameService.init(nns_hash, neo_swift);
+    const nns = NeoNameService.init(allocator, nns_hash, &neo_swift);
     
     try testing.expect(nns.getScriptHash().eql(nns_hash));
     try nns.validate();

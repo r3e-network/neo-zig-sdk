@@ -51,8 +51,7 @@ test "ContractManagement deployment operations" {
     try testing.expect(deploy_tx.getScript() != null);
 
     // Test hasMethod (equivalent to Swift hasMethod tests)
-    const has_method = try contract_mgmt.hasMethod(neo.Hash160.ZERO, "testMethod", 1);
-    try testing.expect(!has_method); // stub returns false
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, contract_mgmt.hasMethod(neo.Hash160.ZERO, "testMethod", 1));
 }
 
 // Tests GasToken (converted from GasTokenTests.swift)
@@ -64,16 +63,14 @@ test "GasToken properties and operations" {
 
     // Test token constants (equivalent to Swift constant tests)
     try testing.expectEqualStrings("GasToken", try gas_token.getName());
-    try testing.expectEqualStrings("GAS", try gas_token.getSymbol());
-    try testing.expectEqual(@as(u8, 8), try gas_token.getDecimals());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getSymbol());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getDecimals());
 
-    // Test total supply (equivalent to Swift totalSupply tests)
-    const total_supply = try gas_token.getTotalSupply();
-    try testing.expectEqual(@as(i64, 100000000 * 100000000), total_supply);
+    // Test total supply (requires RPC client)
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getTotalSupply());
 
-    // Test balance operations (equivalent to Swift balance tests)
-    const balance = try gas_token.getBalanceOf(neo.Hash160.ZERO);
-    try testing.expectEqual(@as(i64, 0), balance); // stub
+    // Test balance operations (requires RPC client)
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getBalanceOf(neo.Hash160.ZERO));
 
     // Test transfer operations (equivalent to Swift transfer tests)
     var transfer_tx = try gas_token.transfer(neo.Hash160.ZERO, neo.Hash160.ZERO, 100000000, null);
@@ -91,8 +88,8 @@ test "NeoToken properties and governance" {
 
     // Test token constants (equivalent to Swift constant tests)
     try testing.expectEqualStrings("NeoToken", try neo_token.getName());
-    try testing.expectEqualStrings("NEO", try neo_token.getSymbol());
-    try testing.expectEqual(@as(u8, 0), try neo_token.getDecimals());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, neo_token.getSymbol());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, neo_token.getDecimals());
 
     // Test governance operations (equivalent to Swift governance tests)
     const test_public_key = [_]u8{0x02} ++ [_]u8{0xAB} ** 32;
@@ -119,8 +116,7 @@ test "FungibleToken operations" {
     const fungible_token = neo.contract.FungibleToken.init(allocator, token_hash, null);
 
     // Test balance operations (equivalent to Swift balance tests)
-    const balance = try fungible_token.getBalanceOf(neo.Hash160.ZERO);
-    try testing.expectEqual(@as(i64, 0), balance); // stub
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, fungible_token.getBalanceOf(neo.Hash160.ZERO));
 
     // Test transfer operations (equivalent to Swift transfer tests)
     var transfer_tx = try fungible_token.transfer(
@@ -154,8 +150,7 @@ test "NonFungibleToken NFT operations" {
     const nft = neo.contract.NonFungibleToken.init(allocator, nft_hash, null);
 
     // Test NFT balance (equivalent to Swift balanceOf tests)
-    const balance = try nft.balanceOf(neo.Hash160.ZERO);
-    try testing.expectEqual(@as(i64, 0), balance); // stub
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, nft.balanceOf(neo.Hash160.ZERO));
 
     // Test NFT transfer (equivalent to Swift transfer tests)
     const token_id = "test_nft_001";
@@ -194,15 +189,9 @@ test "Token base functionality" {
     try testing.expect(token.getScriptHash().eql(token_hash));
 
     // Test token info methods (equivalent to Swift token info tests)
-    const symbol = try token.getSymbol();
-    defer allocator.free(symbol);
-    try testing.expect(symbol.len >= 0);
-
-    const decimals = try token.getDecimals();
-    try testing.expect(decimals <= 18);
-
-    const total_supply = try token.getTotalSupply();
-    try testing.expect(total_supply >= 0);
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, token.getSymbol());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, token.getDecimals());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, token.getTotalSupply());
 }
 
 // Tests script building operations (converted from script tests)

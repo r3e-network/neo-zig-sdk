@@ -8,7 +8,9 @@ const std = @import("std");
 
 const BinaryWriter = @import("../../serialization/binary_writer_complete.zig").CompleteBinaryWriter;
 const BinaryReader = @import("../../serialization/binary_reader_complete.zig").CompleteBinaryReader;
+const constants = @import("../../core/constants.zig");
 const errors = @import("../../core/errors.zig");
+const Hash256 = @import("../../types/hash256.zig").Hash256;
 
 /// Oracle response code for transaction attributes
 pub const OracleResponseCode = enum(u8) {
@@ -55,6 +57,19 @@ pub const TransactionAttribute = union(enum) {
         id: u64,
         response_code: OracleResponseCode,
         result: []const u8,
+        owns_result: bool,
+    },
+    /// Not valid before a specific block height
+    NotValidBefore: struct {
+        height: u32,
+    },
+    /// Conflicts with another transaction hash
+    Conflicts: struct {
+        hash: Hash256,
+    },
+    /// Uses notary-assisted signature with a specified number of keys
+    NotaryAssisted: struct {
+        n_keys: u8,
     },
     
     /// Maximum result size for oracle responses
@@ -67,6 +82,9 @@ pub const TransactionAttribute = union(enum) {
         return switch (self) {
             .HighPriority => "HighPriority",
             .OracleResponse => "OracleResponse",
+            .NotValidBefore => "NotValidBefore",
+            .Conflicts => "Conflicts",
+            .NotaryAssisted => "NotaryAssisted",
         };
     }
     
@@ -75,6 +93,9 @@ pub const TransactionAttribute = union(enum) {
         return switch (self) {
             .HighPriority => 0x01,
             .OracleResponse => 0x11,
+            .NotValidBefore => 0x20,
+            .Conflicts => 0x21,
+            .NotaryAssisted => 0x22,
         };
     }
     
@@ -85,8 +106,12 @@ pub const TransactionAttribute = union(enum) {
             0x11 => Self{ .OracleResponse = .{ 
                 .id = 0, 
                 .response_code = .Error, 
-                .result = "" 
-            }}, // stub - needs proper deserialization
+                .result = "",
+                .owns_result = false,
+            }},
+            0x20 => Self{ .NotValidBefore = .{ .height = 0 } },
+            0x21 => Self{ .Conflicts = .{ .hash = Hash256.ZERO } },
+            0x22 => Self{ .NotaryAssisted = .{ .n_keys = 0 } },
             else => null,
         };
     }
@@ -100,21 +125,38 @@ pub const TransactionAttribute = union(enum) {
             return Self{ .OracleResponse = .{ 
                 .id = 0, 
                 .response_code = .Error, 
-                .result = "" 
+                .result = "",
+                .owns_result = false,
             }};
+        }
+        if (std.mem.eql(u8, json_value, "NotValidBefore")) {
+            return Self{ .NotValidBefore = .{ .height = 0 } };
+        }
+        if (std.mem.eql(u8, json_value, "Conflicts")) {
+            return Self{ .Conflicts = .{ .hash = Hash256.ZERO } };
+        }
+        if (std.mem.eql(u8, json_value, "NotaryAssisted")) {
+            return Self{ .NotaryAssisted = .{ .n_keys = 0 } };
         }
         return null;
     }
     
     /// Gets all cases (equivalent to Swift CaseIterable.allCases)
     pub fn getAllCases(allocator: std.mem.Allocator) ![]Self {
+        const oracle_result = try allocator.dupe(u8, "");
+        errdefer allocator.free(oracle_result);
+
         const cases = [_]Self{
             Self{ .HighPriority = {} },
             Self{ .OracleResponse = .{ 
                 .id = 0, 
                 .response_code = .Error, 
-                .result = try allocator.dupe(u8, "")
+                .result = oracle_result,
+                .owns_result = true,
             }},
+            Self{ .NotValidBefore = .{ .height = 0 } },
+            Self{ .Conflicts = .{ .hash = Hash256.ZERO } },
+            Self{ .NotaryAssisted = .{ .n_keys = 0 } },
         };
         return try allocator.dupe(Self, &cases);
     }
@@ -125,8 +167,12 @@ pub const TransactionAttribute = union(enum) {
             .HighPriority => 1,
             .OracleResponse => |oracle| {
                 // 1 byte for type + 8 bytes for ID + 1 byte for response code + variable result size
-                return 1 + 8 + 1 + getVarBytesSize(oracle.result.len);
+                const decoded_len = std.base64.standard.Decoder.calcSizeForSlice(oracle.result) catch oracle.result.len;
+                return 1 + 8 + 1 + getVarBytesSize(decoded_len);
             },
+            .NotValidBefore => 1 + 4,
+            .Conflicts => 1 + constants.HASH256_SIZE,
+            .NotaryAssisted => 1 + 1,
         };
     }
     
@@ -147,7 +193,19 @@ pub const TransactionAttribute = union(enum) {
                 // Write result as variable bytes (base64 decoded)
                 const result_bytes = try base64Decode(oracle.result, writer.allocator);
                 defer writer.allocator.free(result_bytes);
+                if (result_bytes.len > MAX_RESULT_SIZE) {
+                    return errors.SerializationError.DataTooLarge;
+                }
                 try writer.writeVarBytes(result_bytes);
+            },
+            .NotValidBefore => |not_valid_before| {
+                try writer.writeUInt32(not_valid_before.height);
+            },
+            .Conflicts => |conflict| {
+                try writer.writeHash256(conflict.hash);
+            },
+            .NotaryAssisted => |notary| {
+                try writer.writeByte(notary.n_keys);
             },
         }
     }
@@ -186,8 +244,21 @@ pub const TransactionAttribute = union(enum) {
                         .id = id,
                         .response_code = response_code,
                         .result = result_b64,
+                        .owns_result = true,
                     }
                 };
+            },
+            0x20 => {
+                const height = try reader.readUInt32();
+                return Self{ .NotValidBefore = .{ .height = height } };
+            },
+            0x21 => {
+                const hash = try reader.readHash256();
+                return Self{ .Conflicts = .{ .hash = hash } };
+            },
+            0x22 => {
+                const n_keys = try reader.readByte();
+                return Self{ .NotaryAssisted = .{ .n_keys = n_keys } };
             },
             else => {
                 return error.UnknownTransactionAttributeType;
@@ -199,13 +270,36 @@ pub const TransactionAttribute = union(enum) {
     pub fn encodeToJson(self: Self, allocator: std.mem.Allocator) ![]u8 {
         switch (self) {
             .HighPriority => {
-                return try std.fmt.allocPrint(allocator, "\"HighPriority\"");
+                return try allocator.dupe(u8, "\"HighPriority\"");
             },
             .OracleResponse => |oracle| {
                 return try std.fmt.allocPrint(
                     allocator,
                     "{{\"type\":\"OracleResponse\",\"id\":{},\"code\":{},\"result\":\"{s}\"}}",
                     .{ oracle.id, oracle.response_code.toByte(), oracle.result }
+                );
+            },
+            .NotValidBefore => |not_valid_before| {
+                return try std.fmt.allocPrint(
+                    allocator,
+                    "{{\"type\":\"NotValidBefore\",\"height\":{}}}",
+                    .{not_valid_before.height}
+                );
+            },
+            .Conflicts => |conflict| {
+                const hash_str = try conflict.hash.toString(allocator);
+                defer allocator.free(hash_str);
+                return try std.fmt.allocPrint(
+                    allocator,
+                    "{{\"type\":\"Conflicts\",\"hash\":\"{s}\"}}",
+                    .{hash_str}
+                );
+            },
+            .NotaryAssisted => |notary| {
+                return try std.fmt.allocPrint(
+                    allocator,
+                    "{{\"type\":\"NotaryAssisted\",\"nkeys\":{}}}",
+                    .{notary.n_keys}
                 );
             },
         }
@@ -215,34 +309,83 @@ pub const TransactionAttribute = union(enum) {
     pub fn decodeFromJson(json_str: []const u8, allocator: std.mem.Allocator) !Self {
         const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json_str, .{});
         defer parsed.deinit();
-        
-        switch (parsed.value) {
+        return try Self.fromJson(parsed.value, allocator);
+    }
+
+    pub fn fromJson(json_value: std.json.Value, allocator: std.mem.Allocator) !Self {
+        return switch (json_value) {
             .string => |s| {
                 if (std.mem.eql(u8, s, "HighPriority")) {
                     return Self{ .HighPriority = {} };
                 }
+                if (std.mem.eql(u8, s, "OracleResponse")) {
+                    return Self{ .OracleResponse = .{
+                        .id = 0,
+                        .response_code = .Error,
+                        .result = "",
+                        .owns_result = false,
+                    } };
+                }
+                if (std.mem.eql(u8, s, "NotValidBefore")) {
+                    return Self{ .NotValidBefore = .{ .height = 0 } };
+                }
+                if (std.mem.eql(u8, s, "Conflicts")) {
+                    return Self{ .Conflicts = .{ .hash = Hash256.ZERO } };
+                }
+                if (std.mem.eql(u8, s, "NotaryAssisted")) {
+                    return Self{ .NotaryAssisted = .{ .n_keys = 0 } };
+                }
                 return error.UnknownTransactionAttributeType;
             },
             .object => |obj| {
-                const type_str = obj.get("type").?.string;
+                const type_value = obj.get("type") orelse return error.UnknownTransactionAttributeType;
+                if (type_value != .string) return error.InvalidJsonFormat;
+                const type_str = type_value.string;
+
+                if (std.mem.eql(u8, type_str, "HighPriority")) {
+                    return Self{ .HighPriority = {} };
+                }
                 if (std.mem.eql(u8, type_str, "OracleResponse")) {
-                    const id = @as(u64, @intCast(obj.get("id").?.integer));
-                    const code_int = @as(u8, @intCast(obj.get("code").?.integer));
+                    const id_value = obj.get("id") orelse return error.InvalidJsonFormat;
+                    const code_value = obj.get("code") orelse return error.InvalidJsonFormat;
+                    const result_value = obj.get("result") orelse std.json.Value{ .string = "" };
+
+                    const id = try parseJsonInt(u64, id_value);
+                    const code_int = try parseJsonInt(u8, code_value);
                     const code = OracleResponseCode.fromByte(code_int) orelse return error.InvalidOracleResponseCode;
-                    const result = try allocator.dupe(u8, obj.get("result").?.string);
-                    
-                    return Self{ 
+
+                    if (result_value != .string) return error.InvalidJsonFormat;
+                    const result = try allocator.dupe(u8, result_value.string);
+
+                    return Self{
                         .OracleResponse = .{
                             .id = id,
                             .response_code = code,
                             .result = result,
-                        }
+                            .owns_result = true,
+                        },
                     };
+                }
+                if (std.mem.eql(u8, type_str, "NotValidBefore")) {
+                    const height_value = obj.get("height") orelse obj.get("value") orelse return error.InvalidJsonFormat;
+                    const height = try parseJsonInt(u32, height_value);
+                    return Self{ .NotValidBefore = .{ .height = height } };
+                }
+                if (std.mem.eql(u8, type_str, "Conflicts")) {
+                    const hash_value = obj.get("hash") orelse obj.get("value") orelse return error.InvalidJsonFormat;
+                    if (hash_value != .string) return error.InvalidJsonFormat;
+                    const hash = try Hash256.initWithString(hash_value.string);
+                    return Self{ .Conflicts = .{ .hash = hash } };
+                }
+                if (std.mem.eql(u8, type_str, "NotaryAssisted")) {
+                    const n_keys_value = obj.get("nkeys") orelse obj.get("value") orelse return error.InvalidJsonFormat;
+                    const n_keys = try parseJsonInt(u8, n_keys_value);
+                    return Self{ .NotaryAssisted = .{ .n_keys = n_keys } };
                 }
                 return error.UnknownTransactionAttributeType;
             },
-            else => return error.InvalidJsonFormat,
-        }
+            else => error.InvalidJsonFormat,
+        };
     }
     
     /// Cleanup allocated resources
@@ -250,8 +393,13 @@ pub const TransactionAttribute = union(enum) {
         switch (self.*) {
             .HighPriority => {},
             .OracleResponse => |oracle| {
-                allocator.free(oracle.result);
+                if (oracle.owns_result) {
+                    allocator.free(oracle.result);
+                }
             },
+            .NotValidBefore => {},
+            .Conflicts => {},
+            .NotaryAssisted => {},
         }
     }
     
@@ -264,8 +412,12 @@ pub const TransactionAttribute = union(enum) {
                     .id = oracle.id,
                     .response_code = oracle.response_code,
                     .result = try allocator.dupe(u8, oracle.result),
+                    .owns_result = true,
                 }
             },
+            .NotValidBefore => |not_valid_before| Self{ .NotValidBefore = .{ .height = not_valid_before.height } },
+            .Conflicts => |conflict| Self{ .Conflicts = .{ .hash = conflict.hash } },
+            .NotaryAssisted => |notary| Self{ .NotaryAssisted = .{ .n_keys = notary.n_keys } },
         };
     }
     
@@ -277,6 +429,25 @@ pub const TransactionAttribute = union(enum) {
                 allocator,
                 "OracleResponse(id: {}, code: {}, result_len: {})",
                 .{ oracle.id, oracle.response_code.toByte(), oracle.result.len }
+            ),
+            .NotValidBefore => |not_valid_before| try std.fmt.allocPrint(
+                allocator,
+                "NotValidBefore(height: {})",
+                .{not_valid_before.height}
+            ),
+            .Conflicts => |conflict| blk: {
+                const hash_str = try conflict.hash.toString(allocator);
+                defer allocator.free(hash_str);
+                break :blk try std.fmt.allocPrint(
+                    allocator,
+                    "Conflicts(hash: {s})",
+                    .{hash_str}
+                );
+            },
+            .NotaryAssisted => |notary| try std.fmt.allocPrint(
+                allocator,
+                "NotaryAssisted(n_keys: {})",
+                .{notary.n_keys}
             ),
         };
     }
@@ -305,6 +476,14 @@ fn base64Decode(encoded: []const u8, allocator: std.mem.Allocator) ![]u8 {
     return decoded;
 }
 
+fn parseJsonInt(comptime T: type, value: std.json.Value) !T {
+    return switch (value) {
+        .integer => |i| @as(T, @intCast(i)),
+        .string => |s| std.fmt.parseInt(T, s, 10) catch error.InvalidJsonFormat,
+        else => error.InvalidJsonFormat,
+    };
+}
+
 // Tests (converted from Swift TransactionAttribute tests)
 test "TransactionAttribute creation and properties" {
     const testing = std.testing;
@@ -322,6 +501,7 @@ test "TransactionAttribute creation and properties" {
             .id = 12345,
             .response_code = .Success,
             .result = try allocator.dupe(u8, "test_result"),
+            .owns_result = true,
         }
     };
     defer oracle_response.deinit(allocator);
@@ -329,6 +509,22 @@ test "TransactionAttribute creation and properties" {
     try testing.expectEqualStrings("OracleResponse", oracle_response.getJsonValue());
     try testing.expectEqual(@as(u8, 0x11), oracle_response.getByte());
     try testing.expect(oracle_response.getSize() > 10); // Should be more than base size
+
+    const not_valid_before = TransactionAttribute{ .NotValidBefore = .{ .height = 42 } };
+    try testing.expectEqualStrings("NotValidBefore", not_valid_before.getJsonValue());
+    try testing.expectEqual(@as(u8, 0x20), not_valid_before.getByte());
+    try testing.expectEqual(@as(usize, 1 + 4), not_valid_before.getSize());
+
+    const conflict_hash = try Hash256.initWithString("0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    const conflicts = TransactionAttribute{ .Conflicts = .{ .hash = conflict_hash } };
+    try testing.expectEqualStrings("Conflicts", conflicts.getJsonValue());
+    try testing.expectEqual(@as(u8, 0x21), conflicts.getByte());
+    try testing.expectEqual(@as(usize, 1 + constants.HASH256_SIZE), conflicts.getSize());
+
+    const notary_assisted = TransactionAttribute{ .NotaryAssisted = .{ .n_keys = 2 } };
+    try testing.expectEqualStrings("NotaryAssisted", notary_assisted.getJsonValue());
+    try testing.expectEqual(@as(u8, 0x22), notary_assisted.getByte());
+    try testing.expectEqual(@as(usize, 1 + 1), notary_assisted.getSize());
 }
 
 test "TransactionAttribute byte conversion" {
@@ -340,6 +536,15 @@ test "TransactionAttribute byte conversion" {
     
     const oracle_response_opt = TransactionAttribute.fromByte(0x11);
     try testing.expect(oracle_response_opt != null);
+
+    const not_valid_before_opt = TransactionAttribute.fromByte(0x20);
+    try testing.expect(not_valid_before_opt != null);
+
+    const conflicts_opt = TransactionAttribute.fromByte(0x21);
+    try testing.expect(conflicts_opt != null);
+
+    const notary_assisted_opt = TransactionAttribute.fromByte(0x22);
+    try testing.expect(notary_assisted_opt != null);
     
     // Test invalid byte value
     const invalid_opt = TransactionAttribute.fromByte(0xFF);
@@ -380,6 +585,7 @@ test "TransactionAttribute JSON serialization" {
             .id = 999,
             .response_code = .NotFound,
             .result = try allocator.dupe(u8, "not_found"),
+            .owns_result = true,
         }
     };
     defer oracle_response.deinit(allocator);
@@ -396,6 +602,31 @@ test "TransactionAttribute JSON serialization" {
     try testing.expect(std.meta.activeTag(decoded_oracle) == .OracleResponse);
     try testing.expectEqual(@as(u64, 999), decoded_oracle.OracleResponse.id);
     try testing.expectEqual(OracleResponseCode.NotFound, decoded_oracle.OracleResponse.response_code);
+
+    const not_valid_before = TransactionAttribute{ .NotValidBefore = .{ .height = 2048 } };
+    const not_valid_json = try not_valid_before.encodeToJson(allocator);
+    defer allocator.free(not_valid_json);
+    var decoded_not_valid = try TransactionAttribute.decodeFromJson(not_valid_json, allocator);
+    defer decoded_not_valid.deinit(allocator);
+    try testing.expect(std.meta.activeTag(decoded_not_valid) == .NotValidBefore);
+    try testing.expectEqual(@as(u32, 2048), decoded_not_valid.NotValidBefore.height);
+
+    const conflict_hash = try Hash256.initWithString("0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    const conflicts = TransactionAttribute{ .Conflicts = .{ .hash = conflict_hash } };
+    const conflicts_json = try conflicts.encodeToJson(allocator);
+    defer allocator.free(conflicts_json);
+    var decoded_conflicts = try TransactionAttribute.decodeFromJson(conflicts_json, allocator);
+    defer decoded_conflicts.deinit(allocator);
+    try testing.expect(std.meta.activeTag(decoded_conflicts) == .Conflicts);
+    try testing.expect(decoded_conflicts.Conflicts.hash.eql(conflict_hash));
+
+    const notary_assisted = TransactionAttribute{ .NotaryAssisted = .{ .n_keys = 3 } };
+    const notary_json = try notary_assisted.encodeToJson(allocator);
+    defer allocator.free(notary_json);
+    var decoded_notary = try TransactionAttribute.decodeFromJson(notary_json, allocator);
+    defer decoded_notary.deinit(allocator);
+    try testing.expect(std.meta.activeTag(decoded_notary) == .NotaryAssisted);
+    try testing.expectEqual(@as(u8, 3), decoded_notary.NotaryAssisted.n_keys);
 }
 
 test "TransactionAttribute utility methods" {
@@ -415,6 +646,7 @@ test "TransactionAttribute utility methods" {
             .id = 555,
             .response_code = .Timeout,
             .result = try allocator.dupe(u8, "timeout_result"),
+            .owns_result = true,
         }
     };
     defer original_oracle.deinit(allocator);

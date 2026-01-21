@@ -156,6 +156,8 @@ pub const ContextItem = struct {
     script: []const u8,
     /// Contract parameters
     parameters: ?[]const ContractParameter,
+    /// Whether parameter contents are allocator-owned
+    parameters_owned: bool,
     /// Signatures by public key hex
     signatures: std.HashMap([]const u8, []const u8, StringContext, std.hash_map.default_max_load_percentage),
 
@@ -173,6 +175,7 @@ pub const ContextItem = struct {
         return Self{
             .script = script,
             .parameters = parameters,
+            .parameters_owned = false,
             .signatures = signatures orelse std.HashMap([]const u8, []const u8, StringContext, std.hash_map.default_max_load_percentage).init(allocator),
             .allocator = allocator,
         };
@@ -183,6 +186,11 @@ pub const ContextItem = struct {
         allocator.free(self.script);
 
         if (self.parameters) |params| {
+            if (self.parameters_owned) {
+                for (params) |param| {
+                    @import("../contract/parameter_utils.zig").freeParameter(param, allocator);
+                }
+            }
             allocator.free(params);
         }
 
@@ -256,16 +264,16 @@ pub const ContextItem = struct {
 
         // Parse parameters if present
         var parameters: ?[]ContractParameter = null;
+        var parameters_owned = false;
         if (obj.get("parameters")) |params_array| {
             if (params_array != .array) return errors.SerializationError.InvalidFormat;
             var params_list = ArrayList(ContractParameter).init(allocator);
             errdefer params_list.deinit();
             for (params_array.array.items) |param_json| {
-                // Would parse contract parameter from JSON
-                _ = param_json;
-                try params_list.append(ContractParameter.boolean(true)); // stub
+                try params_list.append(try @import("../contract/parameter_utils.zig").parameterFromJson(param_json, allocator));
             }
             parameters = try params_list.toOwnedSlice();
+            parameters_owned = true;
         }
 
         // Parse signatures
@@ -282,6 +290,7 @@ pub const ContextItem = struct {
         return Self{
             .script = script,
             .parameters = parameters,
+            .parameters_owned = parameters_owned,
             .signatures = signatures,
             .allocator = allocator,
         };

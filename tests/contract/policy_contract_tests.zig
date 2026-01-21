@@ -8,7 +8,6 @@ const std = @import("std");
 
 const testing = std.testing;
 const PolicyContract = @import("../../src/contract/policy_contract.zig").PolicyContract;
-const constants = @import("../../src/core/constants.zig");
 const TestUtils = @import("../helpers/test_utilities.zig");
 
 test "Policy contract constants" {
@@ -17,7 +16,7 @@ test "Policy contract constants" {
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const policy_contract = PolicyContract.init(neo_swift);
+    const policy_contract = PolicyContract.init(allocator, &neo_swift);
     
     try policy_contract.validate();
     try testing.expect(policy_contract.isNativeContract());

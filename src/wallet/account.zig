@@ -5,11 +5,12 @@
 
 const std = @import("std");
 
-const constants = @import("../core/constants.zig");
 const errors = @import("../core/errors.zig");
 const Hash160 = @import("../types/hash160.zig").Hash160;
 const Address = @import("../types/address.zig").Address;
 const ECKeyPair = @import("../crypto/ec_key_pair.zig").ECKeyPair;
+const KeyPair = @import("../crypto/keys.zig").KeyPair;
+const PrivateKey = @import("../crypto/keys.zig").PrivateKey;
 const VerificationScript = @import("verification_script.zig").VerificationScript;
 const secure = @import("../utils/secure.zig");
 
@@ -111,7 +112,7 @@ pub const Account = struct {
     /// Gets script hash (equivalent to Swift getScriptHash())
     pub fn getScriptHash(self: Self) !Hash160 {
         if (self.verification_script) |script| {
-            return try script.getScriptHash();
+            return script.getScriptHash();
         }
 
         if (self.key_pair) |kp| {
@@ -127,9 +128,27 @@ pub const Account = struct {
         return self.address;
     }
 
+    /// Gets verification script (borrowed; do not deinit).
+    pub fn getVerificationScript(self: *const Self) ?*const VerificationScript {
+        if (self.verification_script) |*script| {
+            return script;
+        }
+        return null;
+    }
+
+    /// Gets key pair if available.
+    pub fn getKeyPair(self: Self) ?ECKeyPair {
+        return self.key_pair;
+    }
+
     /// Gets label (equivalent to Swift .label property)
     pub fn getLabel(self: Self) ?[]const u8 {
         return self.label;
+    }
+
+    /// Gets encrypted private key (NEP-2), if present.
+    pub fn getEncryptedPrivateKey(self: Self) ?[]const u8 {
+        return self.encrypted_private_key;
     }
 
     /// Sets label (equivalent to Swift label setting)
@@ -141,9 +160,97 @@ pub const Account = struct {
         self.label = if (label) |l| try self.allocator.dupe(u8, l) else null;
     }
 
+    /// Gets the signing threshold for multi-sig accounts.
+    pub fn getSigningThreshold(self: Self) ?u32 {
+        return self.signing_threshold;
+    }
+
+    /// Gets the number of participants for multi-sig accounts.
+    pub fn getParticipantCount(self: Self) ?u32 {
+        return self.nr_of_participants;
+    }
+
+    /// Checks if the account can directly sign.
+    pub fn canSign(self: Self) bool {
+        return self.key_pair != null and !self.is_locked;
+    }
+
+    /// Compares accounts for equality (based on address).
+    pub fn eql(self: Self, other: Self) bool {
+        return self.address.eql(other.address);
+    }
+
+    /// Creates a deep copy of the account.
+    pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
+        var label: ?[]const u8 = null;
+        errdefer if (label) |label_copy| allocator.free(label_copy);
+        if (self.label) |l| {
+            label = try allocator.dupe(u8, l);
+        }
+
+        var verification_script: ?VerificationScript = null;
+        errdefer if (verification_script) |*script| script.deinit(allocator);
+        if (self.verification_script) |script| {
+            verification_script = try VerificationScript.initFromScript(script.getScript(), allocator);
+        }
+
+        var encrypted_private_key: ?[]const u8 = null;
+        errdefer if (encrypted_private_key) |key| {
+            secure.secureZeroConstBytes(key);
+            allocator.free(key);
+        };
+        if (self.encrypted_private_key) |key| {
+            encrypted_private_key = try allocator.dupe(u8, key);
+        }
+
+        return Self{
+            .key_pair = if (self.key_pair) |kp| kp else null,
+            .address = self.address,
+            .label = label,
+            .verification_script = verification_script,
+            .is_locked = self.is_locked,
+            .encrypted_private_key = encrypted_private_key,
+            .wallet = self.wallet,
+            .signing_threshold = self.signing_threshold,
+            .nr_of_participants = self.nr_of_participants,
+            .allocator = allocator,
+        };
+    }
+
     /// Checks if account is multi-sig (equivalent to Swift .isMultiSig property)
     pub fn isMultiSig(self: Self) bool {
         return self.signing_threshold != null and self.nr_of_participants != null;
+    }
+
+    /// Validates basic account consistency.
+    pub fn validate(self: Self) !void {
+        if (!self.address.isValid()) {
+            return errors.ValidationError.InvalidAddress;
+        }
+
+        if (self.key_pair) |kp| {
+            if (!kp.isValid()) {
+                return errors.ValidationError.InvalidParameter;
+            }
+        }
+
+        if (self.verification_script) |script| {
+            const expected = self.address.toHash160();
+            if (!script.getScriptHash().eql(expected)) {
+                return errors.ValidationError.InvalidParameter;
+            }
+        }
+
+        if ((self.signing_threshold != null) != (self.nr_of_participants != null)) {
+            return errors.ValidationError.InvalidParameter;
+        }
+
+        if (self.signing_threshold) |threshold| {
+            const participants = self.nr_of_participants.?;
+            if (threshold == 0 or participants == 0 or threshold > participants) {
+                return errors.ValidationError.InvalidParameter;
+            }
+        }
     }
 
     /// Checks if account is default (equivalent to Swift .isDefault property)
@@ -175,8 +282,16 @@ pub const Account = struct {
 
     /// Gets private key (equivalent to Swift private key access)
     pub fn getPrivateKey(self: Self) !@import("../crypto/keys.zig").PrivateKey {
+        if (self.is_locked) {
+            return errors.WalletError.WalletLocked;
+        }
+
         if (self.key_pair) |kp| {
             return kp.getPrivateKey();
+        }
+
+        if (self.encrypted_private_key != null) {
+            return errors.WalletError.WalletLocked;
         }
 
         return errors.WalletError.AccountNotFound;
@@ -188,13 +303,25 @@ pub const Account = struct {
             return kp.getPublicKey();
         }
 
+        if (self.encrypted_private_key != null) {
+            return errors.WalletError.WalletLocked;
+        }
+
         return errors.WalletError.AccountNotFound;
     }
 
     /// Signs message (equivalent to Swift signing)
     pub fn signMessage(self: Self, message: []const u8, allocator: std.mem.Allocator) !@import("../crypto/sign.zig").SignatureData {
+        if (self.is_locked) {
+            return errors.WalletError.WalletLocked;
+        }
+
         if (self.key_pair) |kp| {
             return try @import("../crypto/sign.zig").Sign.signMessage(message, kp, allocator);
+        }
+
+        if (self.encrypted_private_key != null) {
+            return errors.WalletError.WalletLocked;
         }
 
         return errors.WalletError.AccountNotFound;
@@ -202,42 +329,152 @@ pub const Account = struct {
 
     /// Encrypts private key (equivalent to Swift encryption)
     pub fn encryptPrivateKey(self: *Self, password: []const u8) !void {
-        if (self.key_pair) |kp| {
-            const nep2 = @import("../crypto/nep2.zig");
-            const encrypted = try nep2.NEP2.encrypt(
-                password,
-                kp,
-                @import("nep6_wallet.zig").ScryptParams.DEFAULT,
-                self.allocator,
-            );
+        const kp = self.key_pair orelse return errors.WalletError.AccountNotFound;
+        const nep2 = @import("../crypto/nep2.zig");
+        var key_pair = KeyPair.init(kp.getPrivateKey(), kp.getPublicKey());
+        defer key_pair.zeroize();
+        const encrypted = try nep2.NEP2.encrypt(
+            password,
+            key_pair,
+            @import("nep6_wallet.zig").ScryptParams.DEFAULT,
+            self.allocator,
+        );
 
-            if (self.encrypted_private_key) |old_key| {
-                secure.secureZeroConstBytes(old_key);
-                self.allocator.free(old_key);
-            }
-
-            self.encrypted_private_key = encrypted;
-
-            // Clear key pair for security
-            var mutable_kp = kp;
-            mutable_kp.zeroize();
-            self.key_pair = null;
+        if (self.encrypted_private_key) |old_key| {
+            secure.secureZeroConstBytes(old_key);
+            self.allocator.free(old_key);
         }
+
+        self.encrypted_private_key = encrypted;
+
+        // Clear key pair for security
+        if (self.key_pair) |*existing| {
+            existing.zeroize();
+        }
+        self.key_pair = null;
+        self.is_locked = true;
+    }
+
+    /// Convenience encrypt method used by legacy tests.
+    pub fn encrypt(self: *Self, password: []const u8, allocator: std.mem.Allocator) !void {
+        _ = allocator;
+        try self.encryptPrivateKey(password);
+        self.lock();
     }
 
     /// Decrypts private key (equivalent to Swift decryption)
     pub fn decryptPrivateKey(self: *Self, password: []const u8) !void {
-        if (self.encrypted_private_key) |encrypted| {
-            const nep2 = @import("../crypto/nep2.zig");
-            const key_pair = try nep2.NEP2.decrypt(
-                password,
-                encrypted,
-                @import("nep6_wallet.zig").ScryptParams.DEFAULT,
-                self.allocator,
-            );
+        const encrypted = self.encrypted_private_key orelse return errors.WalletError.AccountNotFound;
+        const nep2 = @import("../crypto/nep2.zig");
+        var decrypted_pair = try nep2.NEP2.decrypt(
+            password,
+            encrypted,
+            @import("nep6_wallet.zig").ScryptParams.DEFAULT,
+            self.allocator,
+        );
+        const key_pair = ECKeyPair.init(decrypted_pair.private_key, decrypted_pair.public_key);
+        decrypted_pair.zeroize();
 
-            self.key_pair = key_pair;
+        if (self.key_pair) |*existing| {
+            existing.zeroize();
         }
+        self.key_pair = key_pair;
+        self.is_locked = false;
+    }
+
+    /// Convenience decrypt method used by legacy tests.
+    pub fn decrypt(self: *Self, password: []const u8, allocator: std.mem.Allocator) !void {
+        _ = allocator;
+        try self.decryptPrivateKey(password);
+        self.unlock();
+    }
+
+    /// Creates an account from a key pair (Swift-compatible initializer).
+    pub fn init(key_pair: ECKeyPair, allocator: std.mem.Allocator) !Self {
+        return try Self.initFromKeyPair(allocator, key_pair, null, null);
+    }
+
+    /// Creates account from private key (wallet convenience).
+    pub fn initWithPrivateKey(private_key: PrivateKey, compressed: bool, allocator: std.mem.Allocator) !Self {
+        const public_key = try private_key.getPublicKey(compressed);
+        const ec_key_pair = ECKeyPair.init(private_key, public_key);
+        return try Self.initFromKeyPair(allocator, ec_key_pair, null, null);
+    }
+
+    /// Creates a random account (equivalent to Swift Account.create()).
+    pub fn create(allocator: std.mem.Allocator) !Self {
+        const key_pair = try ECKeyPair.createRandom();
+        return try Self.init(key_pair, allocator);
+    }
+
+    /// Creates account from verification script.
+    pub fn fromVerificationScript(verification_script: VerificationScript, allocator: std.mem.Allocator) !Self {
+        const script = verification_script.getScript();
+        const cloned_script = try VerificationScript.initFromScript(script, allocator);
+        const address = Address.fromHash160(cloned_script.getScriptHash());
+        const label = try address.toString(allocator);
+        defer allocator.free(label);
+        return try Self.initFromAddress(allocator, address, label, cloned_script, null, null);
+    }
+
+    /// Creates account from public key (watch-only).
+    pub fn fromPublicKey(public_key: @import("../crypto/keys.zig").PublicKey, allocator: std.mem.Allocator) !Self {
+        const verification_script = try VerificationScript.initFromPublicKey(public_key, allocator);
+        return try Self.fromVerificationScript(verification_script, allocator);
+    }
+
+    /// Creates account from a generic key pair (wallet convenience).
+    pub fn fromKeyPair(key_pair: KeyPair, allocator: std.mem.Allocator) !Self {
+        const ec_key_pair = ECKeyPair.init(key_pair.private_key, key_pair.public_key);
+        return try Self.initFromKeyPair(allocator, ec_key_pair, null, null);
+    }
+
+    /// Creates account from WIF (wallet convenience).
+    pub fn fromWif(wif_string: []const u8, allocator: std.mem.Allocator) !Self {
+        var decode_result = try @import("../crypto/wif.zig").decode(wif_string, allocator);
+        defer decode_result.deinit();
+        return try Self.initWithPrivateKey(decode_result.private_key, decode_result.compressed, allocator);
+    }
+
+    /// Creates a multi-signature account (Swift-compatible convenience).
+    pub fn createMultiSigAccount(
+        public_keys: []const @import("../crypto/keys.zig").PublicKey,
+        signing_threshold: u32,
+        allocator: std.mem.Allocator,
+    ) !Self {
+        if (public_keys.len == 0) {
+            return errors.throwIllegalArgument("At least one public key required for multi-sig");
+        }
+        if (signing_threshold == 0 or signing_threshold > public_keys.len) {
+            return errors.throwIllegalArgument("Invalid signing threshold for multi-sig");
+        }
+
+        var key_slices = try allocator.alloc([]const u8, public_keys.len);
+        defer allocator.free(key_slices);
+        for (public_keys, 0..) |key, i| {
+            key_slices[i] = key.toSlice();
+        }
+
+        const script = try @import("../script/script_builder.zig").ScriptBuilder.buildMultiSigVerificationScript(
+            key_slices,
+            signing_threshold,
+            allocator,
+        );
+        defer allocator.free(script);
+
+        const verification_script = try VerificationScript.initFromScript(script, allocator);
+        const address = Address.fromHash160(verification_script.getScriptHash());
+        const label = try address.toString(allocator);
+        defer allocator.free(label);
+
+        return try Self.initFromAddress(
+            allocator,
+            address,
+            label,
+            verification_script,
+            signing_threshold,
+            @intCast(public_keys.len),
+        );
     }
 
     /// Creates single-signature account (factory method)
@@ -253,6 +490,9 @@ pub const Account = struct {
         nr_of_participants: u32,
         verification_script: VerificationScript,
     ) !Self {
+        if (signing_threshold == 0 or nr_of_participants == 0 or signing_threshold > nr_of_participants) {
+            return errors.throwIllegalArgument("Invalid signing threshold for multi-sig");
+        }
         return try Self.initFromAddress(
             allocator,
             address,
@@ -268,59 +508,21 @@ pub const Account = struct {
         const address = try Address.fromString(address_str, allocator);
         return try Self.initFromAddress(allocator, address, null, null, null, null);
     }
-};
 
-/// Verification script (converted from Swift VerificationScript)
-pub const VerificationScript = struct {
-    script: []const u8,
-    script_hash: Hash160,
-
-    const Self = @This();
-
-    /// Creates verification script from public key (equivalent to Swift init)
-    pub fn initFromPublicKey(public_key: @import("../crypto/keys.zig").PublicKey, allocator: std.mem.Allocator) !Self {
-        const script = try @import("../script/script_builder.zig").ScriptBuilder.buildVerificationScript(
-            public_key.toSlice(),
-            allocator,
-        );
-
-        const script_hash = try Hash160.fromScript(script);
-
-        return Self{
-            .script = script,
-            .script_hash = script_hash,
-        };
+    /// Creates account from address string (legacy convenience).
+    pub fn fromAddress(address: []const u8, allocator: std.mem.Allocator) !Self {
+        return try Self.fromAddressString(allocator, address);
     }
 
-    /// Creates verification script from script bytes
-    pub fn initFromScript(script: []const u8, allocator: std.mem.Allocator) !Self {
-        const script_copy = try allocator.dupe(u8, script);
-        const script_hash = try Hash160.fromScript(script);
-
-        return Self{
-            .script = script_copy,
-            .script_hash = script_hash,
-        };
+    /// Creates a watch-only account from a script hash.
+    pub fn fromScriptHash(allocator: std.mem.Allocator, script_hash: Hash160) !Self {
+        const address = Address.fromHash160(script_hash);
+        return try Self.initFromAddress(allocator, address, null, null, null, null);
     }
 
-    /// Cleanup resources
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-        allocator.free(self.script);
-    }
-
-    /// Gets script hash
-    pub fn getScriptHash(self: Self) Hash160 {
-        return self.script_hash;
-    }
-
-    /// Gets script bytes
-    pub fn getScript(self: Self) []const u8 {
-        return self.script;
-    }
-
-    /// Gets script size
-    pub fn getSize(self: Self) usize {
-        return self.script.len;
+    /// Replaces account keys with a new private key.
+    pub fn withPrivateKey(self: *Self, private_key: PrivateKey, compressed: bool, allocator: std.mem.Allocator) !void {
+        self.* = try Self.initWithPrivateKey(private_key, compressed, allocator);
     }
 };
 

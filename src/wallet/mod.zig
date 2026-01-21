@@ -6,7 +6,9 @@ const std = @import("std");
 
 // Export wallet components
 pub const Wallet = @import("neo_wallet.zig").Wallet;
-pub const Account = @import("neo_wallet.zig").Account;
+// WalletAccount is the NEP-6 wallet entry managed by Wallet.
+pub const WalletAccount = @import("neo_wallet.zig").Account;
+pub const Account = @import("account.zig").Account;
 pub const ScryptParams = @import("neo_wallet.zig").ScryptParams;
 pub const ContractInfo = @import("neo_wallet.zig").ContractInfo;
 pub const Hash160Context = @import("neo_wallet.zig").Hash160Context;

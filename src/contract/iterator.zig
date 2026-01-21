@@ -24,6 +24,8 @@ pub fn Iterator(comptime T: type) type {
         mapper: *const fn (StackItem, std.mem.Allocator) anyerror!T,
 
         allocator: std.mem.Allocator,
+        /// Items fetched ahead of time (used by hasMore)
+        pending: ?[]T,
 
         const Self = @This();
 
@@ -53,17 +55,24 @@ pub fn Iterator(comptime T: type) type {
                 .iterator_id = try allocator.dupe(u8, iterator_id),
                 .mapper = mapper,
                 .allocator = allocator,
+                .pending = null,
             };
         }
 
         /// Cleanup resources
         pub fn deinit(self: *Self) void {
+            if (self.pending) |items| {
+                for (items) |entry| {
+                    deinitMappedItem(entry, self.allocator);
+                }
+                self.allocator.free(items);
+                self.pending = null;
+            }
             self.allocator.free(self.session_id);
             self.allocator.free(self.iterator_id);
         }
 
-        /// Traverses iterator (equivalent to Swift traverse(_ count: Int))
-        pub fn traverse(self: Self, count: u32) ![]T {
+        fn traverseRpc(self: *Self, count: u32) ![]T {
             const neo_swift: *NeoSwift = @ptrCast(@alignCast(self.neo_swift));
             var protocol = NeoProtocol.init(neo_swift.getService());
             const service_allocator = protocol.service.getAllocator();
@@ -90,6 +99,56 @@ pub fn Iterator(comptime T: type) type {
             return mapped_items;
         }
 
+        /// Traverses iterator (equivalent to Swift traverse(_ count: Int))
+        pub fn traverse(self: *Self, count: u32) ![]T {
+            if (count == 0) {
+                return try self.allocator.alloc(T, 0);
+            }
+
+            var pending: ?[]T = null;
+            if (self.pending) |items| {
+                self.pending = null;
+                pending = items;
+            }
+
+            if (pending) |items| {
+                if (items.len == count) {
+                    return items;
+                }
+                if (items.len > count) {
+                    const result = try self.allocator.alloc(T, count);
+                    errdefer self.allocator.free(result);
+                    const remaining = try self.allocator.alloc(T, items.len - count);
+                    @memcpy(result, items[0..count]);
+                    @memcpy(remaining, items[count..]);
+                    self.allocator.free(items);
+                    self.pending = remaining;
+                    return result;
+                }
+            }
+
+            const pending_len: usize = if (pending) |items| items.len else 0;
+            const fetch_count: u32 = @intCast(count - pending_len);
+            const fetched = try self.traverseRpc(fetch_count);
+            errdefer if (pending) |items| {
+                self.pending = items;
+            };
+
+            if (pending) |items| {
+                if (fetched.len == 0) {
+                    return items;
+                }
+                var combined = try self.allocator.alloc(T, items.len + fetched.len);
+                @memcpy(combined[0..items.len], items);
+                @memcpy(combined[items.len..], fetched);
+                self.allocator.free(items);
+                self.allocator.free(fetched);
+                return combined;
+            }
+
+            return fetched;
+        }
+
         /// Terminates session (equivalent to Swift terminateSession())
         pub fn terminateSession(self: Self) !void {
             const neo_swift: *NeoSwift = @ptrCast(@alignCast(self.neo_swift));
@@ -103,13 +162,12 @@ pub fn Iterator(comptime T: type) type {
 
         /// Gets remaining item count estimate (utility method)
         pub fn estimateRemainingItems(self: Self) !u32 {
-            // Would make RPC call to get iterator info
             _ = self;
-            return 0; // stub
+            return errors.NeoError.UnsupportedOperation;
         }
 
         /// Traverses all remaining items (utility method)
-        pub fn traverseAll(self: Self, max_items: u32) ![]T {
+        pub fn traverseAll(self: *Self, max_items: u32) ![]T {
             var all_items = ArrayList(T).init(self.allocator);
             errdefer {
                 for (all_items.items) |entry| {
@@ -147,22 +205,25 @@ pub fn Iterator(comptime T: type) type {
         }
 
         /// Checks if iterator has more items (utility method)
-        pub fn hasMore(self: Self) !bool {
-            // Try to traverse 1 item to check availability
-            const test_items = self.traverse(1) catch |err| {
+        pub fn hasMore(self: *Self) !bool {
+            if (self.pending) |items| {
+                return items.len > 0;
+            }
+
+            const fetched = self.traverseRpc(1) catch |err| {
                 return switch (err) {
                     error.ContractCallFailed => false,
                     else => err,
                 };
             };
-            defer {
-                for (test_items) |entry| {
-                    deinitMappedItem(entry, self.allocator);
-                }
-                self.allocator.free(test_items);
+
+            if (fetched.len == 0) {
+                self.allocator.free(fetched);
+                return false;
             }
 
-            return test_items.len > 0;
+            self.pending = fetched;
+            return true;
         }
 
         /// Gets session info (utility method)

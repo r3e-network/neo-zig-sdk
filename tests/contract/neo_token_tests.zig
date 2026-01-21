@@ -13,9 +13,8 @@ const Hash160 = @import("../../src/types/hash160.zig").Hash160;
 const ContractParameter = @import("../../src/types/contract_parameter.zig").ContractParameter;
 const ScriptBuilder = @import("../../src/script/script_builder.zig").ScriptBuilder;
 const ECKeyPair = @import("../../src/crypto/ec_key_pair.zig").ECKeyPair;
-const PublicKey = @import("../../src/crypto/keys.zig").PublicKey;
-const NeoSwift = @import("../../src/rpc/neo_client.zig").NeoSwift;
 const constants = @import("../../src/core/constants.zig");
+const TestUtils = @import("../helpers/test_utilities.zig");
 
 /// NEO token method constants (equivalent to Swift test constants)
 const VOTE = "vote";
@@ -42,11 +41,10 @@ test "NEO token constants and properties" {
     const allocator = testing.allocator;
     
     // Create NEO token instance (equivalent to Swift NeoToken(neoSwift))
-    const mock_config = @import("../../src/rpc/neo_swift_config.zig").NeoSwiftConfig.createDevConfig();
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const neo_token = NeoToken.init(neo_swift);
+    const neo_token = NeoToken.init(allocator, &neo_swift);
     
     // Test NEO token constants (equivalent to Swift constant tests)
     const expected_script_hash = "ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5";
@@ -75,14 +73,14 @@ test "Register candidate script generation" {
     
     // Create test account
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Get public key for candidate registration (equivalent to Swift pubKeyBytes)
-    const public_key = account.getKeyPair().getPublicKey();
+    const public_key = account.getKeyPair().?.getPublicKey();
     const pub_key_bytes = public_key.toSlice();
     
     // Build expected script (equivalent to Swift expectedScript)
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     var expected_builder = ScriptBuilder.init(allocator);
     defer expected_builder.deinit();
@@ -111,7 +109,7 @@ test "Vote functionality script generation" {
     
     // Create test account
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Create candidate public key for voting
     const candidate_key_pair = try ECKeyPair.createRandom();
@@ -123,14 +121,14 @@ test "Vote functionality script generation" {
     const candidate_public_key = candidate_key_pair.getPublicKey();
     
     // Build vote script (equivalent to Swift vote function call)
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     var vote_builder = ScriptBuilder.init(allocator);
     defer vote_builder.deinit();
     
     // Create vote parameters: account hash + candidate public key
     var vote_params = [_]ContractParameter{
-        try ContractParameter.createHash160(account.getScriptHash(), allocator),
+        try ContractParameter.createHash160(try account.getScriptHash(), allocator),
         try ContractParameter.createPublicKey(candidate_public_key, allocator),
     };
     defer {
@@ -152,7 +150,7 @@ test "Governance method script generation" {
     const allocator = testing.allocator;
     
     // Test various governance methods
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     const governance_methods = [_][]const u8{
         GET_GAS_PER_BLOCK,
@@ -186,16 +184,16 @@ test "NEO token account state queries" {
     
     // Create test account
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Build account state query script
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     var state_builder = ScriptBuilder.init(allocator);
     defer state_builder.deinit();
     
     // Create account state parameter
-    var account_param = try ContractParameter.createHash160(account.getScriptHash(), allocator);
+    var account_param = try ContractParameter.createHash160(try account.getScriptHash(), allocator);
     defer account_param.deinit(allocator);
     
     const state_params = [_]ContractParameter{account_param};
@@ -251,7 +249,7 @@ test "NEO token voting scenarios" {
     
     // Create test account and candidate
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     const candidate_key_pair = try ECKeyPair.createRandom();
     defer {
@@ -259,14 +257,14 @@ test "NEO token voting scenarios" {
         mutable_kp.zeroize();
     }
     
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     // Test vote for candidate
     var vote_builder = ScriptBuilder.init(allocator);
     defer vote_builder.deinit();
     
     var vote_params = [_]ContractParameter{
-        try ContractParameter.createHash160(account.getScriptHash(), allocator),
+        try ContractParameter.createHash160(try account.getScriptHash(), allocator),
         try ContractParameter.createPublicKey(candidate_key_pair.getPublicKey(), allocator),
     };
     defer {
@@ -285,7 +283,7 @@ test "NEO token voting scenarios" {
     defer unvote_builder.deinit();
     
     var unvote_params = [_]ContractParameter{
-        try ContractParameter.createHash160(account.getScriptHash(), allocator),
+        try ContractParameter.createHash160(try account.getScriptHash(), allocator),
         try ContractParameter.createAny(null, allocator),
     };
     defer {
@@ -305,7 +303,7 @@ test "NEO token voting scenarios" {
 test "NEO token governance operations" {
     const allocator = testing.allocator;
     
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     // Test getting gas per block (no parameters)
     var get_gas_builder = ScriptBuilder.init(allocator);
@@ -355,10 +353,10 @@ test "Candidate registration and unregistration" {
     
     // Create test account for candidate operations
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
-    const public_key = account.getKeyPair().getPublicKey();
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
+    const public_key = account.getKeyPair().?.getPublicKey();
     
     // Test register candidate script
     var register_builder = ScriptBuilder.init(allocator);
@@ -402,11 +400,10 @@ test "Candidate registration and unregistration" {
 test "NEO token method name validation" {
     const allocator = testing.allocator;
     
-    const mock_config = @import("../../src/rpc/neo_swift_config.zig").NeoSwiftConfig.createDevConfig();
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const neo_token = NeoToken.init(neo_swift);
+    const neo_token = NeoToken.init(allocator, &neo_swift);
     
     // Test valid NEO token methods
     const valid_methods = [_][]const u8{
@@ -447,9 +444,9 @@ test "NEO token transaction building integration" {
     
     // Create test components
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     // Test building a complete NEO transfer transaction script
     var transfer_builder = ScriptBuilder.init(allocator);
@@ -459,7 +456,7 @@ test "NEO token transaction building integration" {
     const transfer_amount: i64 = 1000000; // 1 million NEO (whole tokens, 0 decimals)
     
     var transfer_params = [_]ContractParameter{
-        try ContractParameter.createHash160(account.getScriptHash(), allocator),
+        try ContractParameter.createHash160(try account.getScriptHash(), allocator),
         try ContractParameter.createHash160(recipient_hash, allocator),
         try ContractParameter.createInteger(transfer_amount, allocator),
         try ContractParameter.createAny(null, allocator), // Data parameter
@@ -478,11 +475,7 @@ test "NEO token transaction building integration" {
     try testing.expect(transfer_script.len > 80); // Should be substantial with 4 parameters including hashes
     
     // Test that script can be used in transaction builder
-    const mock_config = @import("../../src/rpc/neo_swift_config.zig").NeoSwiftConfig.createDevConfig();
-    var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
-    defer TestUtils.destroyNeoSwiftStub(&neo_swift);
-    
-    var tx_builder = @import("../../src/transaction/transaction_builder.zig").TransactionBuilder.init(allocator, neo_swift);
+    var tx_builder = @import("../../src/transaction/transaction_builder.zig").TransactionBuilder.init(allocator);
     defer tx_builder.deinit();
     
     _ = try tx_builder.script(transfer_script);

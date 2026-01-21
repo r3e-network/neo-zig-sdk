@@ -24,7 +24,7 @@ pub const NeoSwiftExpress = struct {
 
     /// Gets populated blocks (equivalent to Swift expressGetPopulatedBlocks)
     pub fn expressGetPopulatedBlocks(self: Self) !ExpressRequest(PopulatedBlocks) {
-        return ExpressRequest(PopulatedBlocks).init(
+        return ExpressRequest(PopulatedBlocks).initBorrowed(
             "expressgetpopulatedblocks",
             "[]",
             self.neo_swift,
@@ -33,7 +33,7 @@ pub const NeoSwiftExpress = struct {
 
     /// Gets NEP-17 contracts (equivalent to Swift expressGetNep17Contracts)
     pub fn expressGetNep17Contracts(self: Self) !ExpressRequest([]Nep17Contract) {
-        return ExpressRequest([]Nep17Contract).init(
+        return ExpressRequest([]Nep17Contract).initBorrowed(
             "expressgetnep17contracts",
             "[]",
             self.neo_swift,
@@ -57,7 +57,7 @@ pub const NeoSwiftExpress = struct {
 
     /// Lists all contracts (equivalent to Swift expressListContracts)
     pub fn expressListContracts(self: Self) !ExpressRequest([]ExpressContractState) {
-        return ExpressRequest([]ExpressContractState).init(
+        return ExpressRequest([]ExpressContractState).initBorrowed(
             "expresslistcontracts",
             "[]",
             self.neo_swift,
@@ -78,7 +78,7 @@ pub const NeoSwiftExpress = struct {
 
     /// Lists checkpoints (equivalent to Swift expressListCheckpoints)
     pub fn expressListCheckpoints(self: Self) !ExpressRequest([][]u8) {
-        return ExpressRequest([][]u8).init(
+        return ExpressRequest([][]u8).initBorrowed(
             "expresslistcheckpoints",
             "[]",
             self.neo_swift,
@@ -105,7 +105,7 @@ pub const NeoSwiftExpress = struct {
         result: []const u8,
         allocator: std.mem.Allocator,
     ) !ExpressRequest([]u8) {
-        const params = try std.fmt.allocPrint(allocator, "[{},{}.\"{s}\"]", .{ request_id, response_code, result });
+        const params = try std.fmt.allocPrint(allocator, "[{}, {}, \"{s}\"]", .{ request_id, response_code, result });
         defer allocator.free(params);
 
         return ExpressRequest([]u8).init(
@@ -117,7 +117,7 @@ pub const NeoSwiftExpress = struct {
 
     /// Shuts down Neo-express node (equivalent to Swift expressShutdown)
     pub fn expressShutdown(self: Self) !ExpressRequest(bool) {
-        return ExpressRequest(bool).init(
+        return ExpressRequest(bool).initBorrowed(
             "expressshutdown",
             "[]",
             self.neo_swift,
@@ -173,6 +173,7 @@ pub fn ExpressRequest(comptime T: type) type {
         method: []const u8,
         params: []const u8,
         neo_swift: NeoSwift,
+        owns_params: bool,
 
         const Self = @This();
 
@@ -181,6 +182,16 @@ pub fn ExpressRequest(comptime T: type) type {
                 .method = method,
                 .params = params,
                 .neo_swift = neo_swift,
+                .owns_params = true,
+            };
+        }
+
+        pub fn initBorrowed(method: []const u8, params: []const u8, neo_swift: NeoSwift) Self {
+            return Self{
+                .method = method,
+                .params = params,
+                .neo_swift = neo_swift,
+                .owns_params = false,
             };
         }
 
@@ -189,7 +200,9 @@ pub fn ExpressRequest(comptime T: type) type {
         }
 
         pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-            allocator.free(self.params);
+            if (self.owns_params) {
+                allocator.free(self.params);
+            }
         }
     };
 }

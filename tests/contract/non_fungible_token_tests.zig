@@ -18,7 +18,7 @@ test "Non-fungible token creation" {
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
     const nft_hash = try Hash160.initWithString("0x1234567890abcdef1234567890abcdef12345678");
-    const nft_token = NonFungibleToken.init(nft_hash, neo_swift);
+    const nft_token = NonFungibleToken.init(allocator, nft_hash, &neo_swift);
     
     try testing.expect(nft_token.getScriptHash().eql(nft_hash));
     try nft_token.validate();

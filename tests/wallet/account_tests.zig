@@ -26,13 +26,14 @@ test "Create generic account" {
     
     // Create random account (equivalent to Swift Account.create())
     var account = try Account.create(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Verify account properties (equivalent to Swift XCTAssertNotNil checks)
     try testing.expect(!account.getAddress().isEmpty());
     try testing.expect(account.getVerificationScript() != null);
     try testing.expect(account.getKeyPair() != null);
-    try testing.expect(!account.getLabel().isEmpty());
+    try testing.expect(account.getLabel() != null);
+    try testing.expect(account.getLabel().?.len > 0);
     try testing.expect(account.getEncryptedPrivateKey() == null);
     try testing.expect(!account.isLocked());
     try testing.expect(!account.isDefault()); // No wallet context, so not default
@@ -59,21 +60,23 @@ test "Create account from existing key pair" {
     
     // Create account from key pair (equivalent to Swift Account(keyPair: keyPair))
     var account = try Account.init(key_pair, allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Verify account properties (equivalent to Swift XCTAssertEqual checks)
     try testing.expect(!account.isMultiSig());
     
-    const account_address = account.getAddress();
-    try testing.expect(std.mem.indexOf(u8, account_address, "N") != null); // Should be valid Neo address
+    const account_address_str = try account.getAddress().toString(allocator);
+    defer allocator.free(account_address_str);
+    try testing.expect(std.mem.indexOf(u8, account_address_str, "N") != null); // Should be valid Neo address
     
     // Verify label matches address by default
-    try testing.expectEqualStrings(account_address, account.getLabel());
+    try testing.expectEqualStrings(account_address_str, account.getLabel().?);
     
     // Verify verification script exists
     const verification_script = account.getVerificationScript().?;
-    try testing.expect(verification_script.len > 0);
-    try testing.expect(verification_script.len >= 40); // Minimum size for single-sig verification script
+    const verification_script_bytes = verification_script.*.getScript();
+    try testing.expect(verification_script_bytes.len > 0);
+    try testing.expect(verification_script_bytes.len >= 40); // Minimum size for single-sig verification script
 }
 
 /// Test creating account from verification script (converted from Swift testFromVerificationScript)
@@ -85,19 +88,19 @@ test "Create account from verification script" {
     const verification_script_bytes = try @import("../../src/utils/string_extensions.zig").StringUtils.bytesFromHex(verification_script_hex, allocator);
     defer allocator.free(verification_script_bytes);
     
-    const verification_script = VerificationScript.initWithBytes(verification_script_bytes);
+    var verification_script = try VerificationScript.initFromScript(verification_script_bytes, allocator);
+    defer verification_script.deinit(allocator);
     
     // Create account from verification script (equivalent to Swift Account.fromVerificationScript)
     var account = try Account.fromVerificationScript(verification_script, allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Verify account address and verification script (equivalent to Swift XCTAssertEqual)
     // Note: Address generation would need to match Neo's exact algorithm
-    const account_address = account.getAddress();
-    try testing.expect(account_address.len > 0);
+    try testing.expect(!account.getAddress().isEmpty());
     
     const account_verification = account.getVerificationScript().?;
-    try testing.expectEqualSlices(u8, verification_script_bytes, account_verification);
+    try testing.expectEqualSlices(u8, verification_script_bytes, account_verification.*.getScript());
 }
 
 /// Test creating account from public key (converted from Swift testFromPublicKey)
@@ -113,14 +116,13 @@ test "Create account from public key" {
     
     // Create account from public key (equivalent to Swift Account.fromPublicKey)
     var account = try Account.fromPublicKey(public_key, allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Verify account properties
-    const account_address = account.getAddress();
-    try testing.expect(account_address.len > 0);
+    try testing.expect(!account.getAddress().isEmpty());
     
     const verification_script = account.getVerificationScript().?;
-    try testing.expect(verification_script.len > 0);
+    try testing.expect(verification_script.*.getScript().len > 0);
     
     // Account should not have private key (created from public key only)
     try testing.expect(account.getKeyPair() == null);
@@ -142,21 +144,23 @@ test "Create multi-signature account from public keys" {
     const public_keys = [_]PublicKey{public_key};
     const signing_threshold: u32 = 1;
     
-    var multi_sig_account = try Account.createMultiSigAccount(&public_keys, signing_threshold, allocator);
-    defer multi_sig_account.deinit(allocator);
+    var multi_sig_account = try Account.createMultiSigAccount(public_keys[0..], signing_threshold, allocator);
+    defer multi_sig_account.deinit();
     
     // Verify multi-sig properties (equivalent to Swift XCTAssert checks)
     try testing.expect(multi_sig_account.isMultiSig());
     
-    const multi_sig_address = multi_sig_account.getAddress();
-    try testing.expect(multi_sig_address.len > 0);
+    const multi_sig_address_str = try multi_sig_account.getAddress().toString(allocator);
+    defer allocator.free(multi_sig_address_str);
+    try testing.expect(multi_sig_address_str.len > 0);
     
     // Label should match address by default
-    try testing.expectEqualStrings(multi_sig_address, multi_sig_account.getLabel());
+    try testing.expectEqualStrings(multi_sig_address_str, multi_sig_account.getLabel().?);
     
     const multi_sig_verification = multi_sig_account.getVerificationScript().?;
-    try testing.expect(multi_sig_verification.len > 0);
-    try testing.expect(multi_sig_verification.len >= 50); // Multi-sig script should be larger
+    const multi_sig_script = multi_sig_verification.*.getScript();
+    try testing.expect(multi_sig_script.len > 0);
+    try testing.expect(multi_sig_script.len >= 50); // Multi-sig script should be larger
     
     // Multi-sig account should not have private key pair
     try testing.expect(multi_sig_account.getKeyPair() == null);
@@ -168,7 +172,7 @@ test "Account encryption and locking" {
     
     // Create account
     var account = try Account.create(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Test initial state
     try testing.expect(!account.isLocked());
@@ -205,18 +209,19 @@ test "Account address generation" {
     }
     
     var account = try Account.init(key_pair, allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Test address generation
-    const address = account.getAddress();
-    try testing.expect(address.len > 0);
-    try testing.expect(address.len >= 25); // Neo addresses are typically 34 chars
+    const address_str = try account.getAddress().toString(allocator);
+    defer allocator.free(address_str);
+    try testing.expect(address_str.len > 0);
+    try testing.expect(address_str.len >= 25); // Neo addresses are typically 34 chars
     
     // Address should start with 'N' for Neo
-    try testing.expect(address[0] == 'N');
+    try testing.expect(address_str[0] == 'N');
     
     // Test script hash derivation
-    const script_hash = account.getScriptHash();
+    const script_hash = try account.getScriptHash();
     try testing.expect(!script_hash.isZero());
     
     const script_hash_string = try script_hash.toString(allocator);
@@ -243,22 +248,28 @@ test "Account equality and comparison" {
     }
     
     var account1 = try Account.init(key_pair1, allocator);
-    defer account1.deinit(allocator);
+    defer account1.deinit();
     
     var account2 = try Account.init(key_pair2, allocator);
-    defer account2.deinit(allocator);
+    defer account2.deinit();
     
     // Should be equal (same key pair)
     try testing.expect(account1.eql(account2));
-    try testing.expectEqualStrings(account1.getAddress(), account2.getAddress());
+    const account1_address = try account1.getAddress().toString(allocator);
+    defer allocator.free(account1_address);
+    const account2_address = try account2.getAddress().toString(allocator);
+    defer allocator.free(account2_address);
+    try testing.expectEqualStrings(account1_address, account2_address);
     
     // Create different account
     var account3 = try Account.create(allocator);
-    defer account3.deinit(allocator);
+    defer account3.deinit();
     
     // Should not be equal
     try testing.expect(!account1.eql(account3));
-    try testing.expect(!std.mem.eql(u8, account1.getAddress(), account3.getAddress()));
+    const account3_address = try account3.getAddress().toString(allocator);
+    defer allocator.free(account3_address);
+    try testing.expect(!std.mem.eql(u8, account1_address, account3_address));
 }
 
 /// Test account validation
@@ -267,7 +278,7 @@ test "Account validation" {
     
     // Test valid account
     var valid_account = try Account.create(allocator);
-    defer valid_account.deinit(allocator);
+    defer valid_account.deinit();
     
     try valid_account.validate();
     
@@ -282,7 +293,7 @@ test "Account validation" {
     }
     
     var key_pair_account = try Account.init(key_pair, allocator);
-    defer key_pair_account.deinit(allocator);
+    defer key_pair_account.deinit();
     
     try key_pair_account.validate();
     
@@ -318,20 +329,21 @@ test "Multi-signature account properties" {
     const signing_threshold: u32 = 2; // 2-of-3 multi-sig
     
     // Create multi-sig account
-    var multi_sig_account = try Account.createMultiSigAccount(&public_keys, signing_threshold, allocator);
-    defer multi_sig_account.deinit(allocator);
+    var multi_sig_account = try Account.createMultiSigAccount(public_keys[0..], signing_threshold, allocator);
+    defer multi_sig_account.deinit();
     
     // Verify multi-sig properties
     try testing.expect(multi_sig_account.isMultiSig());
     try testing.expect(multi_sig_account.getKeyPair() == null); // No single key pair
     
-    const multi_sig_address = multi_sig_account.getAddress();
-    try testing.expect(multi_sig_address.len > 0);
-    try testing.expect(multi_sig_address[0] == 'N'); // Neo address
+    const multi_sig_address_str = try multi_sig_account.getAddress().toString(allocator);
+    defer allocator.free(multi_sig_address_str);
+    try testing.expect(multi_sig_address_str.len > 0);
+    try testing.expect(multi_sig_address_str[0] == 'N'); // Neo address
     
     // Multi-sig verification script should be larger
     const verification_script = multi_sig_account.getVerificationScript().?;
-    try testing.expect(verification_script.len > 80); // Should contain multiple pubkeys + threshold
+    try testing.expect(verification_script.*.getScript().len > 80); // Should contain multiple pubkeys + threshold
     
     // Test signing threshold and participant count
     try testing.expectEqual(signing_threshold, multi_sig_account.getSigningThreshold().?);
@@ -344,7 +356,7 @@ test "Account signing capabilities" {
     
     // Create account with key pair
     var account = try Account.create(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Test message signing
     const test_message = "Hello, Neo blockchain!";
@@ -367,8 +379,8 @@ test "Account signing capabilities" {
     
     // Multi-sig account cannot sign directly
     const public_keys = [_]PublicKey{account.getKeyPair().?.getPublicKey()};
-    var multi_sig_account = try Account.createMultiSigAccount(&public_keys, 1, allocator);
-    defer multi_sig_account.deinit(allocator);
+    var multi_sig_account = try Account.createMultiSigAccount(public_keys[0..], 1, allocator);
+    defer multi_sig_account.deinit();
     
     try testing.expect(!multi_sig_account.canSign()); // No direct key pair
 }
@@ -379,24 +391,24 @@ test "Account cloning and copying" {
     
     // Create original account
     var original_account = try Account.create(allocator);
-    defer original_account.deinit(allocator);
+    defer original_account.deinit();
     
     // Set some properties
-    try original_account.setLabel("TestAccount", allocator);
+    try original_account.setLabel("TestAccount");
     
     // Clone account
     var cloned_account = try original_account.clone(allocator);
-    defer cloned_account.deinit(allocator);
+    defer cloned_account.deinit();
     
     // Should be equal but independent
     try testing.expect(original_account.eql(cloned_account));
-    try testing.expectEqualStrings(original_account.getAddress(), cloned_account.getAddress());
-    try testing.expectEqualStrings(original_account.getLabel(), cloned_account.getLabel());
+    try testing.expect(original_account.getAddress().eql(cloned_account.getAddress()));
+    try testing.expectEqualStrings(original_account.getLabel().?, cloned_account.getLabel().?);
     
     // Modify clone label
-    try cloned_account.setLabel("ModifiedAccount", allocator);
+    try cloned_account.setLabel("ModifiedAccount");
     
     // Original should not be affected
-    try testing.expectEqualStrings("TestAccount", original_account.getLabel());
-    try testing.expectEqualStrings("ModifiedAccount", cloned_account.getLabel());
+    try testing.expectEqualStrings("TestAccount", original_account.getLabel().?);
+    try testing.expectEqualStrings("ModifiedAccount", cloned_account.getLabel().?);
 }

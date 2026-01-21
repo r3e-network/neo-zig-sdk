@@ -535,27 +535,8 @@ pub const NeoGetUnspents = struct {
     };
 };
 
-/// Transaction attribute response (converted from Swift TransactionAttribute response)
-pub const TransactionAttributeResponse = struct {
-    attribute_type: []const u8,
-    value: []const u8,
-
-    pub fn init() TransactionAttributeResponse {
-        return TransactionAttributeResponse{
-            .attribute_type = "",
-            .value = "",
-        };
-    }
-
-    pub fn fromJson(json_value: std.json.Value, allocator: std.mem.Allocator) !TransactionAttributeResponse {
-        const obj = json_value.object;
-
-        return TransactionAttributeResponse{
-            .attribute_type = try allocator.dupe(u8, obj.get("type").?.string),
-            .value = try allocator.dupe(u8, obj.get("value").?.string),
-        };
-    }
-};
+/// Transaction attribute response (typed)
+pub const TransactionAttributeResponse = @import("../protocol/response/transaction_attribute.zig").TransactionAttribute;
 
 /// Notification response (converted from Swift Notification)
 pub const NotificationResponse = struct {

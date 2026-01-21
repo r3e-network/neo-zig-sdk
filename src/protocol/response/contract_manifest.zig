@@ -8,9 +8,9 @@ const std = @import("std");
 
 const Hash160 = @import("../../types/hash160.zig").Hash160;
 const ECKeyPair = @import("../../crypto/ec_key_pair.zig").ECKeyPair;
-const PublicKey = @import("../../crypto/keys.zig").PublicKey;
 const Sign = @import("../../crypto/sign.zig").Sign;
 const ScriptBuilder = @import("../../script/script_builder.zig").ScriptBuilder;
+const json_utils = @import("../../utils/json_utils.zig");
 
 /// Contract group information (converted from Swift ContractGroup)
 pub const ContractGroup = struct {
@@ -83,6 +83,36 @@ pub const ContractABI = struct {
     pub fn init(methods: []ContractMethod, events: []ContractEvent) Self {
         return Self{ .methods = methods, .events = events };
     }
+
+    pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
+        var methods_copy = try allocator.alloc(ContractMethod, self.methods.len);
+        var methods_count: usize = 0;
+        errdefer {
+            for (methods_copy[0..methods_count]) |*method| {
+                method.deinit(allocator);
+            }
+            allocator.free(methods_copy);
+        }
+        for (self.methods) |method| {
+            methods_copy[methods_count] = try method.clone(allocator);
+            methods_count += 1;
+        }
+
+        var events_copy = try allocator.alloc(ContractEvent, self.events.len);
+        var events_count: usize = 0;
+        errdefer {
+            for (events_copy[0..events_count]) |*event| {
+                event.deinit(allocator);
+            }
+            allocator.free(events_copy);
+        }
+        for (self.events) |event| {
+            events_copy[events_count] = try event.clone(allocator);
+            events_count += 1;
+        }
+
+        return Self.init(methods_copy, events_copy);
+    }
     
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
         for (self.methods) |*method| {
@@ -109,9 +139,34 @@ pub const ContractMethod = struct {
     pub fn init(name: []const u8, parameters: []ContractParameter, return_type: []const u8) Self {
         return Self{ .name = name, .parameters = parameters, .return_type = return_type };
     }
+
+    pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
+        const name_copy = try allocator.dupe(u8, self.name);
+        errdefer allocator.free(name_copy);
+        const return_copy = try allocator.dupe(u8, self.return_type);
+        errdefer allocator.free(return_copy);
+
+        var params_copy = try allocator.alloc(ContractParameter, self.parameters.len);
+        var params_count: usize = 0;
+        errdefer {
+            for (params_copy[0..params_count]) |param| {
+                param.deinit(allocator);
+            }
+            allocator.free(params_copy);
+        }
+        for (self.parameters) |param| {
+            params_copy[params_count] = try param.clone(allocator);
+            params_count += 1;
+        }
+
+        return Self.init(name_copy, params_copy, return_copy);
+    }
     
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
+        for (self.parameters) |param| {
+            param.deinit(allocator);
+        }
         allocator.free(self.parameters);
         
         allocator.free(self.return_type);
@@ -129,9 +184,32 @@ pub const ContractEvent = struct {
     pub fn init(name: []const u8, parameters: []ContractParameter) Self {
         return Self{ .name = name, .parameters = parameters };
     }
+
+    pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
+        const name_copy = try allocator.dupe(u8, self.name);
+        errdefer allocator.free(name_copy);
+
+        var params_copy = try allocator.alloc(ContractParameter, self.parameters.len);
+        var params_count: usize = 0;
+        errdefer {
+            for (params_copy[0..params_count]) |param| {
+                param.deinit(allocator);
+            }
+            allocator.free(params_copy);
+        }
+        for (self.parameters) |param| {
+            params_copy[params_count] = try param.clone(allocator);
+            params_count += 1;
+        }
+
+        return Self.init(name_copy, params_copy);
+    }
     
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
+        for (self.parameters) |param| {
+            param.deinit(allocator);
+        }
         allocator.free(self.parameters);
     }
 };
@@ -145,6 +223,26 @@ pub const ContractPermission = struct {
     
     pub fn init(contract: []const u8, methods: [][]const u8) Self {
         return Self{ .contract = contract, .methods = methods };
+    }
+
+    pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
+        const contract_copy = try allocator.dupe(u8, self.contract);
+        errdefer allocator.free(contract_copy);
+
+        var methods_copy = try allocator.alloc([]const u8, self.methods.len);
+        var methods_count: usize = 0;
+        errdefer {
+            for (methods_copy[0..methods_count]) |method| {
+                allocator.free(method);
+            }
+            allocator.free(methods_copy);
+        }
+        for (self.methods) |method| {
+            methods_copy[methods_count] = try allocator.dupe(u8, method);
+            methods_count += 1;
+        }
+
+        return Self.init(contract_copy, methods_copy);
     }
     
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
@@ -193,8 +291,18 @@ pub const ContractManifest = struct {
         const name_copy = if (name) |n| try allocator.dupe(u8, n) else null;
         errdefer if (name_copy) |owned| allocator.free(owned);
 
-        const groups_copy = try allocator.dupe(ContractGroup, groups);
-        errdefer allocator.free(groups_copy);
+        var groups_copy = try allocator.alloc(ContractGroup, groups.len);
+        var groups_count: usize = 0;
+        errdefer {
+            for (groups_copy[0..groups_count]) |*group| {
+                group.deinit(allocator);
+            }
+            allocator.free(groups_copy);
+        }
+        for (groups) |group| {
+            groups_copy[groups_count] = try group.clone(allocator);
+            groups_count += 1;
+        }
 
         var standards_copy = try allocator.alloc([]const u8, supported_standards.len);
         var standards_count: usize = 0;
@@ -209,8 +317,18 @@ pub const ContractManifest = struct {
             standards_count += 1;
         }
 
-        const permissions_copy = try allocator.dupe(ContractPermission, permissions);
-        errdefer allocator.free(permissions_copy);
+        var permissions_copy = try allocator.alloc(ContractPermission, permissions.len);
+        var permissions_count: usize = 0;
+        errdefer {
+            for (permissions_copy[0..permissions_count]) |*permission| {
+                permission.deinit(allocator);
+            }
+            allocator.free(permissions_copy);
+        }
+        for (permissions) |permission| {
+            permissions_copy[permissions_count] = try permission.clone(allocator);
+            permissions_count += 1;
+        }
 
         var trusts_copy = try allocator.alloc([]const u8, trusts.len);
         var trusts_count: usize = 0;
@@ -225,16 +343,40 @@ pub const ContractManifest = struct {
             trusts_count += 1;
         }
 
+        var abi_copy: ?ContractABI = if (abi) |manifest_abi| try manifest_abi.clone(allocator) else null;
+        errdefer if (abi_copy) |*manifest_abi| manifest_abi.deinit(allocator);
+
+        const features_copy = try cloneObjectMapOptional(features, allocator);
+        errdefer freeObjectMapOptional(features_copy, allocator);
+
+        const extra_copy = try cloneObjectMapOptional(extra, allocator);
+        errdefer freeObjectMapOptional(extra_copy, allocator);
+
         return Self{
             .name = name_copy,
             .groups = groups_copy,
-            .features = features,
+            .features = features_copy,
             .supported_standards = standards_copy,
-            .abi = abi,
+            .abi = abi_copy,
             .permissions = permissions_copy,
             .trusts = trusts_copy,
-            .extra = extra,
+            .extra = extra_copy,
         };
+    }
+
+    /// Deep clone with owned memory.
+    pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
+        return try Self.init(
+            self.name,
+            self.groups,
+            self.features,
+            self.supported_standards,
+            self.abi,
+            self.permissions,
+            self.trusts,
+            self.extra,
+            allocator,
+        );
     }
     
     /// Creates group for manifest (equivalent to Swift createGroup)
@@ -373,9 +515,7 @@ pub const ContractManifest = struct {
         }
         allocator.free(self.groups);
         
-        if (self.features) |*features| {
-            features.deinit();
-        }
+        freeObjectMapOptional(self.features, allocator);
         
         for (self.supported_standards) |standard| {
             allocator.free(standard);
@@ -396,9 +536,7 @@ pub const ContractManifest = struct {
         }
         allocator.free(self.trusts);
         
-        if (self.extra) |*extra| {
-            extra.deinit();
-        }
+        freeObjectMapOptional(self.extra, allocator);
     }
     
     /// Format for display
@@ -417,6 +555,23 @@ pub const ContractManifest = struct {
 };
 
 /// Helper functions
+fn cloneObjectMapOptional(
+    map_opt: ?std.json.ObjectMap,
+    allocator: std.mem.Allocator,
+) !?std.json.ObjectMap {
+    if (map_opt) |map| {
+        const cloned_value = try json_utils.cloneValue(std.json.Value{ .object = map }, allocator);
+        return cloned_value.object;
+    }
+    return null;
+}
+
+fn freeObjectMapOptional(map_opt: ?std.json.ObjectMap, allocator: std.mem.Allocator) void {
+    if (map_opt) |map| {
+        json_utils.freeValue(std.json.Value{ .object = map }, allocator);
+    }
+}
+
 fn isValidBase64(data: []const u8) bool {
     if (data.len == 0) return false;
     if (data.len % 4 != 0) return false;

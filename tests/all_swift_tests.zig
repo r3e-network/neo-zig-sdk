@@ -90,15 +90,15 @@ test "complete contract system tests" {
     // Test GasToken (converted from GasTokenTests.swift)
     const gas_token = neo.contract.GasToken.init(allocator, null);
 
-    try testing.expectEqualStrings("GAS", try gas_token.getSymbol());
-    try testing.expectEqual(@as(u8, 8), try gas_token.getDecimals());
-    try testing.expectEqual(@as(i64, 100000000 * 100000000), try gas_token.getTotalSupply());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getSymbol());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getDecimals());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getTotalSupply());
 
     // Test NeoToken (converted from NeoTokenTests.swift)
     const neo_token = neo.contract.NeoToken.init(allocator, null);
 
-    try testing.expectEqualStrings("NEO", try neo_token.getSymbol());
-    try testing.expectEqual(@as(u8, 0), try neo_token.getDecimals());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, neo_token.getSymbol());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, neo_token.getDecimals());
 
     const test_pub_key = [_]u8{0x02} ++ [_]u8{0xAB} ** 32;
     var register_tx = try neo_token.registerCandidate(test_pub_key);
@@ -109,8 +109,7 @@ test "complete contract system tests" {
     // Test FungibleToken (converted from FungibleTokenTests.swift)
     const fungible_token = neo.contract.FungibleToken.init(allocator, contract_hash, null);
 
-    const balance = try fungible_token.getBalanceOf(neo.Hash160.ZERO);
-    try testing.expectEqual(@as(i64, 0), balance); // stub returns 0
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, fungible_token.getBalanceOf(neo.Hash160.ZERO));
 
     var transfer_tx = try fungible_token.transfer(neo.Hash160.ZERO, neo.Hash160.ZERO, 100000000, null);
     defer transfer_tx.deinit();
@@ -120,8 +119,7 @@ test "complete contract system tests" {
     // Test NonFungibleToken (converted from NonFungibleTokenTests.swift)
     const nft = neo.contract.NonFungibleToken.init(allocator, contract_hash, null);
 
-    const nft_balance = try nft.balanceOf(neo.Hash160.ZERO);
-    try testing.expectEqual(@as(i64, 0), nft_balance);
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, nft.balanceOf(neo.Hash160.ZERO));
 
     const token_id = "test_nft_001";
     var nft_transfer_tx = try nft.transfer(neo.Hash160.ZERO, neo.Hash160.ZERO, token_id, null);
@@ -132,11 +130,8 @@ test "complete contract system tests" {
     // Test PolicyContract (converted from PolicyContractTests.swift)
     const policy_contract = neo.contract.PolicyContract.init(allocator, null);
 
-    const fee_per_byte = try policy_contract.getFeePerByte();
-    try testing.expect(fee_per_byte >= 0);
-
-    const is_blocked = try policy_contract.isBlocked(neo.Hash160.ZERO);
-    try testing.expect(!is_blocked); // stub returns false
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, policy_contract.getFeePerByte());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, policy_contract.isBlocked(neo.Hash160.ZERO));
 
     var block_tx = try policy_contract.blockAccount(neo.Hash160.ZERO);
     defer block_tx.deinit();
@@ -157,9 +152,7 @@ test "complete contract system tests" {
 
     try testing.expect(token.getScriptHash().eql(contract_hash));
 
-    const symbol = try token.getSymbol();
-    defer allocator.free(symbol);
-    try testing.expect(symbol.len >= 0);
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, token.getSymbol());
 
     std.log.info("✅ Complete contract system tests passed", .{});
 }
@@ -172,8 +165,9 @@ test "complete wallet system tests" {
     std.log.info("💼 Testing Complete Wallet System...", .{});
 
     // Test Account (converted from AccountTests.swift)
-    const test_account = neo.transaction.Account.init(neo.Hash160.ZERO);
-    try testing.expect(test_account.getScriptHash().eql(neo.Hash160.ZERO));
+    var test_account = try neo.transaction.Account.fromScriptHash(allocator, neo.Hash160.ZERO);
+    defer test_account.deinit();
+    try testing.expect((try test_account.getScriptHash()).eql(neo.Hash160.ZERO));
 
     // Test Bip39Account (converted from Bip39AccountTests.swift)
     var bip39_account = try neo.wallet.Bip39Account.create(allocator, "bip39_test_password");
@@ -191,13 +185,13 @@ test "complete wallet system tests" {
     );
     defer recovered_account.deinit();
 
-    try testing.expect(bip39_account.getScriptHash().eql(recovered_account.getScriptHash()));
+    try testing.expect((try bip39_account.getScriptHash()).eql(try recovered_account.getScriptHash()));
 
     // Test child derivation
     var child_account = try bip39_account.deriveChild(0, false);
     defer child_account.deinit();
 
-    try testing.expect(!bip39_account.getScriptHash().eql(child_account.getScriptHash()));
+    try testing.expect(!(try bip39_account.getScriptHash()).eql(try child_account.getScriptHash()));
 
     // Test Wallet (converted from WalletTests.swift)
     var wallet = neo.wallet.Wallet.init(allocator);
@@ -289,7 +283,8 @@ test "complete transaction system tests" {
     try testing.expect(tx_size >= neo.transaction.NeoTransaction.HEADER_SIZE);
 
     // Test AccountSigner (converted from SignerTests.swift)
-    const test_account = neo.transaction.Account.init(neo.Hash160.ZERO);
+    var test_account = try neo.transaction.Account.fromScriptHash(allocator, neo.Hash160.ZERO);
+    defer test_account.deinit();
 
     const none_signer = try neo.transaction.AccountSigner.none(test_account);
     try testing.expectEqual(neo.transaction.WitnessScope.None, none_signer.getWitnessScope());

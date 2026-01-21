@@ -70,9 +70,7 @@ pub const NonFungibleToken = struct {
         const params = [_]ContractParameter{ContractParameter.byteArray(token_id)};
 
         const smart_contract = self.token.smart_contract;
-        if (smart_contract.neo_swift == null) {
-            return TokenProperties.initWithAllocator(smart_contract.allocator);
-        }
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
 
         const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
         var request = try neo_swift.invokeFunction(smart_contract.script_hash, PROPERTIES, &params, &[_]Signer{});
@@ -144,6 +142,21 @@ pub const NonFungibleToken = struct {
         return try self.callFunctionAndUnwrapIterator(TOKENS, &[_]ContractParameter{}, max_items);
     }
 
+    /// Gets script hash for this token.
+    pub fn getScriptHash(self: Self) Hash160 {
+        return self.token.getScriptHash();
+    }
+
+    /// Validates the underlying token configuration.
+    pub fn validate(self: Self) !void {
+        return self.token.validate();
+    }
+
+    /// Returns true if this token is backed by a native contract.
+    pub fn isNativeContract(self: Self) bool {
+        return self.token.isNativeContract();
+    }
+
     /// Helper methods for iterator handling
     fn callFunctionReturningIterator(
         self: Self,
@@ -151,9 +164,7 @@ pub const NonFungibleToken = struct {
         params: []const ContractParameter,
     ) !TokenIterator {
         const smart_contract = self.token.smart_contract;
-        if (smart_contract.neo_swift == null) {
-            return TokenIterator.initWithAllocator(smart_contract.allocator);
-        }
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
 
         const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
         var request = try neo_swift.invokeFunction(smart_contract.script_hash, function_name, params, &[_]Signer{});
@@ -187,9 +198,7 @@ pub const NonFungibleToken = struct {
         max_items: u32,
     ) ![][]u8 {
         const smart_contract = self.token.smart_contract;
-        if (smart_contract.neo_swift == null) {
-            return try smart_contract.allocator.alloc([]u8, 0);
-        }
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
 
         const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
         var request = try neo_swift.invokeFunction(smart_contract.script_hash, function_name, params, &[_]Signer{});
@@ -448,8 +457,7 @@ test "NonFungibleToken creation and basic operations" {
     const nft = NonFungibleToken.init(allocator, nft_hash, null);
 
     // Test balance operations (equivalent to Swift balanceOf tests)
-    const balance = try nft.balanceOf(Hash160.ZERO);
-    try testing.expect(balance >= 0);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, nft.balanceOf(Hash160.ZERO));
 }
 
 test "NonFungibleToken transfer operations" {
@@ -492,20 +500,10 @@ test "NonFungibleToken token enumeration" {
     const nft = NonFungibleToken.init(allocator, nft_hash, null);
 
     // Test tokens enumeration (equivalent to Swift tokens tests)
-    var all_tokens_iter = try nft.tokens();
-    defer all_tokens_iter.deinit();
-    try testing.expect(!all_tokens_iter.hasNext()); // stub returns false
-
-    var owner_tokens_iter = try nft.tokensOf(Hash160.ZERO);
-    defer owner_tokens_iter.deinit();
-    try testing.expect(!owner_tokens_iter.hasNext()); // stub returns false
+    try testing.expectError(errors.NeoError.InvalidConfiguration, nft.tokens());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, nft.tokensOf(Hash160.ZERO));
 
     // Test unwrapped versions
-    const all_tokens = try nft.tokensUnwrapped(100);
-    defer allocator.free(all_tokens);
-    try testing.expectEqual(@as(usize, 0), all_tokens.len);
-
-    const owner_tokens = try nft.tokensOfUnwrapped(Hash160.ZERO, 100);
-    defer allocator.free(owner_tokens);
-    try testing.expectEqual(@as(usize, 0), owner_tokens.len);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, nft.tokensUnwrapped(100));
+    try testing.expectError(errors.NeoError.InvalidConfiguration, nft.tokensOfUnwrapped(Hash160.ZERO, 100));
 }

@@ -44,14 +44,12 @@ pub const GasToken = struct {
 
     /// Gets token symbol (equivalent to Swift getSymbol() override)
     pub fn getSymbol(self: Self) ![]const u8 {
-        _ = self;
-        return SYMBOL;
+        return try self.fungible_token.getSymbol();
     }
 
     /// Gets token decimals (equivalent to Swift getDecimals() override)
     pub fn getDecimals(self: Self) !u8 {
-        _ = self;
-        return DECIMALS;
+        return try self.fungible_token.getDecimals();
     }
 
     /// Gets balance for account (delegates to fungible token)
@@ -72,9 +70,22 @@ pub const GasToken = struct {
 
     /// Gets total supply (would typically call RPC, but GAS has fixed issuance model)
     pub fn getTotalSupply(self: Self) !i64 {
-        _ = self;
-        // GAS has a maximum supply of 100,000,000 GAS
-        return 100000000 * 100000000; // 100M GAS with 8 decimals
+        return try self.fungible_token.getTotalSupply();
+    }
+
+    /// Gets script hash for this token.
+    pub fn getScriptHash(self: Self) Hash160 {
+        return self.fungible_token.getScriptHash();
+    }
+
+    /// Validates the underlying token configuration.
+    pub fn validate(self: Self) !void {
+        return self.fungible_token.validate();
+    }
+
+    /// Returns true if this token is backed by a native contract.
+    pub fn isNativeContract(self: Self) bool {
+        return self.fungible_token.isNativeContract();
     }
 };
 
@@ -87,11 +98,11 @@ test "GasToken constants and properties" {
 
     // Test constant values (equivalent to Swift constant tests)
     try testing.expectEqualStrings("GasToken", try gas_token.getName());
-    try testing.expectEqualStrings("GAS", try gas_token.getSymbol());
-    try testing.expectEqual(@as(u8, 8), try gas_token.getDecimals());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, gas_token.getSymbol());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, gas_token.getDecimals());
 
     // Test script hash (equivalent to Swift SCRIPT_HASH test)
-    const script_hash = gas_token.fungible_token.token.getScriptHash();
+    const script_hash = gas_token.getScriptHash();
     try testing.expect(std.mem.eql(u8, &constants.NativeContracts.GAS_TOKEN, &script_hash.toArray()));
 }
 
@@ -102,9 +113,8 @@ test "GasToken operations" {
     const gas_token = GasToken.init(allocator, null);
 
     // Test balance operations (equivalent to Swift balance tests)
-    const balance = try gas_token.getBalanceOf(Hash160.ZERO);
-    try testing.expect(balance >= 0);
-    try testing.expectEqual(@as(i64, 100000000 * 100000000), try gas_token.getTotalSupply());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, gas_token.getBalanceOf(Hash160.ZERO));
+    try testing.expectError(errors.NeoError.InvalidConfiguration, gas_token.getTotalSupply());
 
     // Test transfer operations (equivalent to Swift transfer tests)
     var transfer_tx = try gas_token.transfer(Hash160.ZERO, Hash160.ZERO, 100000000, null);

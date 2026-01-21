@@ -9,8 +9,12 @@ const constants = @import("../core/constants.zig");
 const errors = @import("../core/errors.zig");
 const Hash160 = @import("../types/hash160.zig").Hash160;
 const ContractParameter = @import("../types/contract_parameter.zig").ContractParameter;
+const StackItem = @import("../types/stack_item.zig").StackItem;
 const SmartContract = @import("smart_contract.zig").SmartContract;
 const TransactionBuilder = @import("../transaction/transaction_builder.zig").TransactionBuilder;
+const NeoSwift = @import("../rpc/neo_client.zig").NeoSwift;
+const Signer = @import("../transaction/transaction_builder.zig").Signer;
+const iterator_mod = @import("iterator.zig");
 
 /// Policy contract for network policy management (converted from Swift PolicyContract)
 pub const PolicyContract = struct {
@@ -41,6 +45,24 @@ pub const PolicyContract = struct {
         return Self{
             .smart_contract = SmartContract.init(allocator, SCRIPT_HASH, neo_swift),
         };
+    }
+
+    /// Gets script hash for this contract.
+    pub fn getScriptHash(self: Self) Hash160 {
+        return self.smart_contract.getScriptHash();
+    }
+
+    /// Validates the underlying contract configuration.
+    pub fn validate(self: Self) !void {
+        try self.smart_contract.validate();
+        if (!self.smart_contract.getScriptHash().eql(SCRIPT_HASH)) {
+            return errors.ContractError.InvalidContract;
+        }
+    }
+
+    /// Returns true if this contract is native.
+    pub fn isNativeContract(self: Self) bool {
+        return self.smart_contract.isNativeContract();
     }
 
     /// Gets fee per byte (equivalent to Swift getFeePerByte)
@@ -96,13 +118,56 @@ pub const PolicyContract = struct {
 
     /// Gets all blocked accounts (equivalent to Swift getBlockedAccounts)
     pub fn getBlockedAccounts(self: Self) ![]Hash160 {
-        // This would make actual RPC call and parse blocked accounts
-        return try self.smart_contract.allocator.alloc(Hash160, 0);
+        const smart_contract = self.smart_contract;
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
+
+        const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
+        var request = try neo_swift.invokeFunction(smart_contract.script_hash, "getBlockedAccounts", &[_]ContractParameter{}, &[_]Signer{});
+        var invocation = try request.send();
+        const service_allocator = neo_swift.getService().getAllocator();
+        defer invocation.deinit(service_allocator);
+
+        if (invocation.hasFaulted()) {
+            return errors.ContractError.ContractExecutionFailed;
+        }
+
+        const session_id = invocation.session orelse return errors.NetworkError.InvalidResponse;
+        const first_item = try invocation.getFirstStackItem();
+        const interop = switch (first_item) {
+            .InteropInterface => |iface| iface,
+            else => return errors.SerializationError.InvalidFormat,
+        };
+
+        const mapper = struct {
+            fn map(stack_item: StackItem, allocator: std.mem.Allocator) !Hash160 {
+                const bytes = try stack_item.getByteArray(allocator);
+                defer allocator.free(bytes);
+                if (bytes.len != constants.HASH160_SIZE) return errors.SerializationError.InvalidFormat;
+                var buf: [constants.HASH160_SIZE]u8 = undefined;
+                @memcpy(&buf, bytes);
+                std.mem.reverse(u8, &buf);
+                return Hash160.fromArray(buf);
+            }
+        }.map;
+
+        var iterator = try iterator_mod.Iterator(Hash160).init(
+            smart_contract.allocator,
+            smart_contract.neo_swift.?,
+            session_id,
+            interop.iterator_id,
+            mapper,
+        );
+        defer iterator.deinit();
+
+        const items = try iterator.traverseAll(SmartContract.DEFAULT_ITERATOR_COUNT);
+        iterator.terminateSession() catch {};
+        return items;
     }
 
     /// Checks multiple accounts blocked status (batch operation)
     pub fn areBlocked(self: Self, script_hashes: []const Hash160) ![]bool {
-        var results = try self.smart_contract.allocator.alloc(bool, script_hashes.len);
+        const results = try self.smart_contract.allocator.alloc(bool, script_hashes.len);
+        errdefer self.smart_contract.allocator.free(results);
 
         for (script_hashes, 0..) |script_hash, i| {
             results[i] = try self.isBlocked(script_hash);
@@ -172,14 +237,9 @@ test "PolicyContract fee operations" {
     const policy_contract = PolicyContract.init(allocator, null);
 
     // Test fee retrieval (equivalent to Swift fee tests)
-    const fee_per_byte = try policy_contract.getFeePerByte();
-    try testing.expect(fee_per_byte >= 0);
-
-    const exec_fee_factor = try policy_contract.getExecFeeFactor();
-    try testing.expect(exec_fee_factor >= 0);
-
-    const storage_price = try policy_contract.getStoragePrice();
-    try testing.expect(storage_price >= 0);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, policy_contract.getFeePerByte());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, policy_contract.getExecFeeFactor());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, policy_contract.getStoragePrice());
 
     // Test fee setting (equivalent to Swift set fee tests)
     var set_fee_tx = try policy_contract.setFeePerByte(1000);
@@ -208,8 +268,7 @@ test "PolicyContract account blocking" {
     const test_script_hash = Hash160.ZERO;
 
     // Test is blocked check
-    const is_blocked = try policy_contract.isBlocked(test_script_hash);
-    try testing.expect(!is_blocked); // stub returns false
+    try testing.expectError(errors.NeoError.InvalidConfiguration, policy_contract.isBlocked(test_script_hash));
 
     // Test block account
     var block_tx = try policy_contract.blockAccount(test_script_hash);
@@ -225,10 +284,7 @@ test "PolicyContract account blocking" {
 
     // Test batch blocking check
     const script_hashes = [_]Hash160{ Hash160.ZERO, Hash160.ZERO };
-    const blocked_status = try policy_contract.areBlocked(&script_hashes);
-    defer allocator.free(blocked_status);
-
-    try testing.expectEqual(@as(usize, 2), blocked_status.len);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, policy_contract.areBlocked(&script_hashes));
 }
 
 test "PolicyContract network policies" {
@@ -238,16 +294,5 @@ test "PolicyContract network policies" {
     const policy_contract = PolicyContract.init(allocator, null);
 
     // Test comprehensive policy retrieval
-    const policies = try policy_contract.getCurrentPolicies();
-
-    try testing.expect(policies.fee_per_byte >= 0);
-    try testing.expect(policies.exec_fee_factor >= 0);
-    try testing.expect(policies.storage_price >= 0);
-
-    // Test fee estimation utilities
-    const estimated_tx_fee = policies.estimateTransactionFee(1000); // 1KB transaction
-    try testing.expect(estimated_tx_fee >= 0);
-
-    const estimated_storage_cost = policies.estimateStorageCost(100); // 100 bytes storage
-    try testing.expect(estimated_storage_cost >= 0);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, policy_contract.getCurrentPolicies());
 }

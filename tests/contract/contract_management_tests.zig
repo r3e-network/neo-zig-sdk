@@ -16,7 +16,7 @@ test "Contract management creation" {
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const contract_mgmt = ContractManagement.init(neo_swift);
+    const contract_mgmt = ContractManagement.init(allocator, &neo_swift);
     
     try contract_mgmt.validate();
     try testing.expect(contract_mgmt.isNativeContract());

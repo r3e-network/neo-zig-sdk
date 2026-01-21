@@ -8,7 +8,6 @@ const std = @import("std");
 
 const testing = std.testing;
 const GasToken = @import("../../src/contract/gas_token.zig").GasToken;
-const constants = @import("../../src/core/constants.zig");
 const TestUtils = @import("../helpers/test_utilities.zig");
 
 test "GAS token constants and properties" {
@@ -17,7 +16,7 @@ test "GAS token constants and properties" {
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const gas_token = GasToken.init(neo_swift);
+    const gas_token = GasToken.init(allocator, &neo_swift);
     
     const gas_hash_string = try gas_token.getScriptHash().toString(allocator);
     defer allocator.free(gas_hash_string);

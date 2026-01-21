@@ -14,8 +14,10 @@ const StackItem = @import("../types/stack_item.zig").StackItem;
 const SmartContract = @import("smart_contract.zig").SmartContract;
 const TransactionBuilder = @import("../transaction/transaction_builder.zig").TransactionBuilder;
 const NeoSwift = @import("../rpc/neo_client.zig").NeoSwift;
+const NeoProtocol = @import("../protocol/neo_protocol.zig").NeoProtocol;
 const Signer = @import("../transaction/transaction_builder.zig").Signer;
 const iterator_mod = @import("iterator.zig");
+const responses = @import("../rpc/responses.zig");
 
 /// Contract Management contract (converted from Swift ContractManagement)
 pub const ContractManagement = struct {
@@ -45,6 +47,24 @@ pub const ContractManagement = struct {
         };
     }
 
+    /// Gets script hash for this contract.
+    pub fn getScriptHash(self: Self) Hash160 {
+        return self.smart_contract.getScriptHash();
+    }
+
+    /// Validates the underlying contract configuration.
+    pub fn validate(self: Self) !void {
+        try self.smart_contract.validate();
+        if (!self.smart_contract.getScriptHash().eql(SCRIPT_HASH)) {
+            return errors.ContractError.InvalidContract;
+        }
+    }
+
+    /// Returns true if this contract is native.
+    pub fn isNativeContract(self: Self) bool {
+        return self.smart_contract.isNativeContract();
+    }
+
     /// Gets minimum deployment fee (equivalent to Swift getMinimumDeploymentFee)
     pub fn getMinimumDeploymentFee(self: Self) !i64 {
         return try self.smart_contract.callFunctionReturningInt(GET_MINIMUM_DEPLOYMENT_FEE, &[_]ContractParameter{});
@@ -58,9 +78,19 @@ pub const ContractManagement = struct {
 
     /// Gets contract state by hash (equivalent to Swift getContract)
     pub fn getContract(self: Self, contract_hash: Hash160) !ContractState {
-        // This would make RPC call to getcontractstate
-        _ = contract_hash;
-        return try self.smart_contract.getContractState();
+        const smart_contract = self.smart_contract;
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
+
+        const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
+        var protocol = NeoProtocol.init(neo_swift.getService());
+        var request = try protocol.getContractState(contract_hash);
+        var response = try request.sendUsing(protocol.service);
+        const service_allocator = neo_swift.getService().getAllocator();
+        defer response.deinit(service_allocator);
+
+        const state = response.result orelse return errors.ContractError.InvalidContractState;
+        response.result = null;
+        return state;
     }
 
     /// Gets contract by ID (equivalent to Swift getContractById)
@@ -154,9 +184,7 @@ pub const ContractManagement = struct {
         params: []const ContractParameter,
     ) !ContractIterator {
         const smart_contract = self.smart_contract;
-        if (smart_contract.neo_swift == null) {
-            return ContractIterator.initWithAllocator(smart_contract.allocator);
-        }
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
 
         const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
         var request = try neo_swift.invokeFunction(smart_contract.script_hash, function_name, params, &[_]Signer{});
@@ -190,9 +218,7 @@ pub const ContractManagement = struct {
         max_items: u32,
     ) ![]ContractIdentifiers {
         const smart_contract = self.smart_contract;
-        if (smart_contract.neo_swift == null) {
-            return try smart_contract.allocator.alloc(ContractIdentifiers, 0);
-        }
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
 
         const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
         var request = try neo_swift.invokeFunction(smart_contract.script_hash, function_name, params, &[_]Signer{});
@@ -393,151 +419,15 @@ pub const ContractIdentifiers = struct {
     }
 };
 
-/// Contract state (extended from smart_contract.zig)
-pub const ContractState = struct {
-    id: i32,
-    update_counter: u32,
-    hash: Hash160,
-    nef: ContractNef,
-    manifest: ContractManifest,
-
-    const Self = @This();
-
-    pub fn init() Self {
-        return Self{
-            .id = 0,
-            .update_counter = 0,
-            .hash = Hash160.ZERO,
-            .nef = ContractNef.init(),
-            .manifest = ContractManifest.init(),
-        };
-    }
-};
-
-/// Contract NEF file (converted from Swift)
-pub const ContractNef = struct {
-    magic: u32,
-    compiler: []const u8,
-    source: []const u8,
-    script: []const u8,
-    checksum: u32,
-
-    pub fn init() ContractNef {
-        return ContractNef{
-            .magic = 0x3346454E, // "NEF3"
-            .compiler = "",
-            .source = "",
-            .script = &[_]u8{},
-            .checksum = 0,
-        };
-    }
-};
-
-/// Contract manifest (extended)
-pub const ContractManifest = struct {
-    name: []const u8,
-    groups: []const ContractGroup,
-    features: ContractFeatures,
-    supported_standards: []const []const u8,
-    abi: ContractABI,
-    permissions: []const ContractPermission,
-    trusts: []const Hash160,
-    extra: ?[]const u8,
-
-    pub fn init() ContractManifest {
-        return ContractManifest{
-            .name = "",
-            .groups = &[_]ContractGroup{},
-            .features = ContractFeatures.init(),
-            .supported_standards = &[_][]const u8{},
-            .abi = ContractABI.init(),
-            .permissions = &[_]ContractPermission{},
-            .trusts = &[_]Hash160{},
-            .extra = null,
-        };
-    }
-};
-
-/// Contract group
-pub const ContractGroup = struct {
-    public_key: [33]u8,
-    signature: [64]u8,
-
-    pub fn init() ContractGroup {
-        return ContractGroup{
-            .public_key = std.mem.zeroes([33]u8),
-            .signature = std.mem.zeroes([64]u8),
-        };
-    }
-};
-
-/// Contract features
-pub const ContractFeatures = struct {
-    storage: bool,
-    payable: bool,
-
-    pub fn init() ContractFeatures {
-        return ContractFeatures{ .storage = false, .payable = false };
-    }
-};
-
-/// Contract ABI
-pub const ContractABI = struct {
-    methods: []const ContractMethod,
-    events: []const ContractEvent,
-
-    pub fn init() ContractABI {
-        return ContractABI{
-            .methods = &[_]ContractMethod{},
-            .events = &[_]ContractEvent{},
-        };
-    }
-};
-
-/// Contract method
-pub const ContractMethod = struct {
-    name: []const u8,
-    parameters: []const ContractParameter,
-    return_type: []const u8,
-    offset: u32,
-    safe: bool,
-
-    pub fn init() ContractMethod {
-        return ContractMethod{
-            .name = "",
-            .parameters = &[_]ContractParameter{},
-            .return_type = "Any",
-            .offset = 0,
-            .safe = false,
-        };
-    }
-};
-
-/// Contract event
-pub const ContractEvent = struct {
-    name: []const u8,
-    parameters: []const ContractParameter,
-
-    pub fn init() ContractEvent {
-        return ContractEvent{
-            .name = "",
-            .parameters = &[_]ContractParameter{},
-        };
-    }
-};
-
-/// Contract permission
-pub const ContractPermission = struct {
-    contract: Hash160,
-    methods: []const []const u8,
-
-    pub fn init() ContractPermission {
-        return ContractPermission{
-            .contract = Hash160.ZERO,
-            .methods = &[_][]const u8{},
-        };
-    }
-};
+pub const ContractState = responses.ContractState;
+pub const ContractNef = responses.ContractNef;
+pub const ContractManifest = responses.ContractManifest;
+pub const ContractGroup = responses.ContractGroup;
+pub const ContractFeatures = responses.ContractFeatures;
+pub const ContractABI = responses.ContractABI;
+pub const ContractMethod = responses.ContractMethod;
+pub const ContractEvent = responses.ContractEvent;
+pub const ContractPermission = responses.ContractPermission;
 
 // Tests (converted from Swift ContractManagement tests)
 test "ContractManagement creation and basic operations" {
@@ -587,8 +477,7 @@ test "ContractManagement method validation" {
 
     // Test hasMethod functionality (equivalent to Swift hasMethod tests)
     const test_hash = Hash160.ZERO;
-    const has_method = try contract_mgmt.hasMethod(test_hash, "testMethod", 2);
-    try testing.expect(has_method or !has_method);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, contract_mgmt.hasMethod(test_hash, "testMethod", 2));
 }
 
 test "ContractManagement fee operations" {
@@ -598,8 +487,7 @@ test "ContractManagement fee operations" {
     const contract_mgmt = ContractManagement.init(allocator, null);
 
     // Test minimum deployment fee operations (equivalent to Swift fee tests)
-    const min_fee = try contract_mgmt.getMinimumDeploymentFee();
-    try testing.expectEqual(@as(i64, 0), min_fee); // stub returns 0
+    try testing.expectError(errors.NeoError.InvalidConfiguration, contract_mgmt.getMinimumDeploymentFee());
 
     // Test setting minimum fee
     var set_fee_tx = try contract_mgmt.setMinimumDeploymentFee(1000000);

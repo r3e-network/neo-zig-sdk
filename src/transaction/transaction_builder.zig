@@ -8,16 +8,16 @@ const ArrayList = std.ArrayList;
 
 const constants = @import("../core/constants.zig");
 const errors = @import("../core/errors.zig");
-const crypto = @import("../crypto/crypto.zig");
 const Hash160 = @import("../types/hash160.zig").Hash160;
 const Hash256 = @import("../types/hash256.zig").Hash256;
-const Address = @import("../types/address.zig").Address;
 const ContractParameter = @import("../types/contract_parameter.zig").ContractParameter;
 const BinaryWriter = @import("../serialization/binary_writer.zig").BinaryWriter;
 const BinaryReader = @import("../serialization/binary_reader.zig").BinaryReader;
 const json_utils = @import("../utils/json_utils.zig");
 const ScriptBuilder = @import("../script/script_builder.zig").ScriptBuilder;
 const witness_rule_mod = @import("witness_rule.zig");
+
+pub const Account = @import("../wallet/account.zig").Account;
 
 /// Transaction builder for constructing Neo transactions (Swift API compatible)
 pub const TransactionBuilder = struct {
@@ -105,7 +105,7 @@ pub const TransactionBuilder = struct {
 
     /// Sets the first signer by account (equivalent to Swift firstSigner(_ sender: Account))
     pub fn firstSignerAccount(self: *Self, sender_account: Account) !*Self {
-        return try self.firstSigner(sender_account.getScriptHash());
+        return try self.firstSigner(try sender_account.getScriptHash());
     }
 
     /// Sets the first signer by script hash (equivalent to Swift firstSigner(_ sender: Hash160))
@@ -222,8 +222,28 @@ pub const TransactionBuilder = struct {
 
     /// Adds high priority attribute (equivalent to Swift highPriority())
     pub fn highPriority(self: *Self) !*Self {
-        const high_priority_attr = TransactionAttribute.init(.HighPriority, &[_]u8{});
-        try self.attributes_list.append(high_priority_attr);
+        try self.attributes_list.append(TransactionAttribute.initHighPriority());
+        return self;
+    }
+
+    /// Adds not-valid-before attribute (equivalent to Swift notValidBefore(_ height:))
+    pub fn notValidBefore(self: *Self, height: u32) !*Self {
+        const attribute = try TransactionAttribute.initNotValidBefore(height, self.allocator);
+        try self.attributes_list.append(attribute);
+        return self;
+    }
+
+    /// Adds conflicts attribute (equivalent to Swift conflicts(_ hash:))
+    pub fn conflicts(self: *Self, conflict_hash: Hash256) !*Self {
+        const attribute = try TransactionAttribute.initConflicts(conflict_hash, self.allocator);
+        try self.attributes_list.append(attribute);
+        return self;
+    }
+
+    /// Adds notary-assisted attribute (equivalent to Swift notaryAssisted(_ nKeys:))
+    pub fn notaryAssisted(self: *Self, n_keys: u8) !*Self {
+        const attribute = try TransactionAttribute.initNotaryAssisted(n_keys, self.allocator);
+        try self.attributes_list.append(attribute);
         return self;
     }
 
@@ -331,13 +351,14 @@ pub const TransactionBuilder = struct {
         // Sign with each account
         for (accounts, 0..) |account, idx| {
             const expected_signer = transaction.signers[idx];
-            if (!account.getScriptHash().eql(expected_signer.signer_hash)) {
+            const account_hash = try account.getScriptHash();
+            if (!account_hash.eql(expected_signer.signer_hash)) {
                 return errors.TransactionError.InvalidSigner;
             }
 
             const private_key = try account.getPrivateKey();
             const signature = try private_key.sign(signing_hash);
-            const public_key = try private_key.getPublicKey(true);
+            const public_key = try account.getPublicKey();
 
             // Build invocation script (signature)
             var invocation_script = ArrayList(u8).init(self.allocator);
@@ -684,11 +705,64 @@ pub const TransactionAttribute = struct {
         };
     }
 
+    pub fn initHighPriority() Self {
+        return Self.init(.HighPriority, &[_]u8{});
+    }
+
+    pub fn initNotValidBefore(height: u32, allocator: std.mem.Allocator) !Self {
+        const height_bytes = std.mem.toBytes(std.mem.nativeToLittle(u32, height));
+        const payload = try allocator.dupe(u8, &height_bytes);
+        var attribute = Self.init(.NotValidBefore, payload);
+        attribute.owns_data = true;
+        return attribute;
+    }
+
+    pub fn initConflicts(hash: Hash256, allocator: std.mem.Allocator) !Self {
+        const hash_bytes = hash.toLittleEndianArray();
+        const payload = try allocator.dupe(u8, &hash_bytes);
+        var attribute = Self.init(.Conflicts, payload);
+        attribute.owns_data = true;
+        return attribute;
+    }
+
+    pub fn initNotaryAssisted(n_keys: u8, allocator: std.mem.Allocator) !Self {
+        const payload = try allocator.alloc(u8, 1);
+        errdefer allocator.free(payload);
+        payload[0] = n_keys;
+        var attribute = Self.init(.NotaryAssisted, payload);
+        attribute.owns_data = true;
+        return attribute;
+    }
+
     pub fn getSize(self: Self) u32 {
         return switch (self.attribute_type) {
             .HighPriority => 1,
             else => 1 + @as(u32, @intCast(self.data.len)),
         };
+    }
+
+    pub fn getNotValidBeforeHeight(self: Self) !u32 {
+        if (self.attribute_type != .NotValidBefore or self.data.len != 4) {
+            return errors.TransactionError.InvalidParameters;
+        }
+        return std.mem.littleToNative(u32, std.mem.bytesToValue(u32, self.data[0..4]));
+    }
+
+    pub fn getConflictsHash(self: Self) !Hash256 {
+        if (self.attribute_type != .Conflicts or self.data.len != constants.HASH256_SIZE) {
+            return errors.TransactionError.InvalidParameters;
+        }
+        var bytes: [constants.HASH256_SIZE]u8 = undefined;
+        @memcpy(&bytes, self.data[0..constants.HASH256_SIZE]);
+        std.mem.reverse(u8, &bytes);
+        return try Hash256.initWithBytes(&bytes);
+    }
+
+    pub fn getNotaryAssistedNKeys(self: Self) !u8 {
+        if (self.attribute_type != .NotaryAssisted or self.data.len != 1) {
+            return errors.TransactionError.InvalidParameters;
+        }
+        return self.data[0];
     }
 
     pub fn validate(self: Self) !void {
@@ -715,7 +789,21 @@ pub const TransactionAttribute = struct {
                     return errors.TransactionError.InvalidParameters;
                 }
             },
-            else => {},
+            .NotValidBefore => {
+                if (self.data.len != 4) {
+                    return errors.TransactionError.InvalidParameters;
+                }
+            },
+            .Conflicts => {
+                if (self.data.len != constants.HASH256_SIZE) {
+                    return errors.TransactionError.InvalidParameters;
+                }
+            },
+            .NotaryAssisted => {
+                if (self.data.len != 1) {
+                    return errors.TransactionError.InvalidParameters;
+                }
+            },
         }
     }
 
@@ -731,11 +819,41 @@ pub const TransactionAttribute = struct {
         const attr_type: AttributeType = switch (type_byte) {
             @intFromEnum(AttributeType.HighPriority) => .HighPriority,
             @intFromEnum(AttributeType.OracleResponse) => .OracleResponse,
+            @intFromEnum(AttributeType.NotValidBefore) => .NotValidBefore,
+            @intFromEnum(AttributeType.Conflicts) => .Conflicts,
+            @intFromEnum(AttributeType.NotaryAssisted) => .NotaryAssisted,
             else => return errors.SerializationError.InvalidFormat,
         };
 
         if (attr_type == .HighPriority) {
             return Self.init(.HighPriority, &[_]u8{});
+        }
+
+        if (attr_type == .NotValidBefore) {
+            var height_bytes: [4]u8 = undefined;
+            try reader.readBytes(&height_bytes);
+            const payload = try allocator.dupe(u8, &height_bytes);
+            var attribute = Self.init(.NotValidBefore, payload);
+            attribute.owns_data = true;
+            return attribute;
+        }
+
+        if (attr_type == .Conflicts) {
+            var hash_bytes: [constants.HASH256_SIZE]u8 = undefined;
+            try reader.readBytes(&hash_bytes);
+            const payload = try allocator.dupe(u8, &hash_bytes);
+            var attribute = Self.init(.Conflicts, payload);
+            attribute.owns_data = true;
+            return attribute;
+        }
+
+        if (attr_type == .NotaryAssisted) {
+            const payload = try allocator.alloc(u8, 1);
+            errdefer allocator.free(payload);
+            payload[0] = try reader.readByte();
+            var attribute = Self.init(.NotaryAssisted, payload);
+            attribute.owns_data = true;
+            return attribute;
         }
 
         // OracleResponse payload (id + code + var-bytes result)
@@ -1003,97 +1121,6 @@ pub const Transaction = struct {
     }
 };
 
-/// Account stub (to be fully implemented)
-pub const Account = struct {
-    script_hash: Hash160,
-    private_key: ?crypto.PrivateKey,
-    compressed: bool,
-
-    pub fn init(script_hash: Hash160) Account {
-        return Account{
-            .script_hash = script_hash,
-            .private_key = null,
-            .compressed = true,
-        };
-    }
-
-    pub fn initWithPrivateKey(private_key: crypto.PrivateKey, compressed: bool, allocator: std.mem.Allocator) !Account {
-        const public_key = try private_key.getPublicKey(compressed);
-        const script_hash = try Hash160.fromPublicKey(public_key.toSlice(), allocator);
-
-        return Account{
-            .script_hash = script_hash,
-            .private_key = private_key,
-            .compressed = compressed,
-        };
-    }
-
-    pub fn fromAddress(address: []const u8, allocator: std.mem.Allocator) !Account {
-        const hash = try Hash160.fromAddress(address, allocator);
-        return Account.init(hash);
-    }
-
-    pub fn fromWif(wif_string: []const u8, allocator: std.mem.Allocator) !Account {
-        const decode_result = try crypto.wif.decode(wif_string, allocator);
-        return try Account.initWithPrivateKey(decode_result.private_key, decode_result.compressed, allocator);
-    }
-
-    pub fn fromKeyPair(key_pair: crypto.KeyPair, address: @import("../types/address.zig").Address) Account {
-        _ = address;
-
-        // Build the verification script without heap allocation.
-        const pub_key_bytes = key_pair.public_key.toSlice();
-        var script_buf: [72]u8 = undefined;
-        var offset: usize = 0;
-
-        script_buf[offset] = 0x0C; // PUSHDATA1
-        offset += 1;
-        script_buf[offset] = @intCast(pub_key_bytes.len);
-        offset += 1;
-        @memcpy(script_buf[offset .. offset + pub_key_bytes.len], pub_key_bytes);
-        offset += pub_key_bytes.len;
-
-        script_buf[offset] = 0x41; // SYSCALL
-        offset += 1;
-        const syscall_bytes = std.mem.toBytes(std.mem.nativeToLittle(u32, constants.InteropServices.SYSTEM_CRYPTO_CHECK_SIG));
-        @memcpy(script_buf[offset .. offset + syscall_bytes.len], &syscall_bytes);
-        offset += syscall_bytes.len;
-
-        const script_hash = Hash160.fromScript(script_buf[0..offset]) catch |err| @panic(@errorName(err));
-
-        return Account{
-            .script_hash = script_hash,
-            .private_key = key_pair.private_key,
-            .compressed = key_pair.public_key.compressed,
-        };
-    }
-
-    pub fn getScriptHash(self: Account) Hash160 {
-        return self.script_hash;
-    }
-
-    pub fn getAddress(self: Account) Address {
-        return Address.fromHash160WithVersion(self.script_hash, constants.AddressConstants.ADDRESS_VERSION);
-    }
-
-    pub fn hasPrivateKey(self: Account) bool {
-        return self.private_key != null;
-    }
-
-    pub fn getPrivateKey(self: Account) !crypto.PrivateKey {
-        return self.private_key orelse return errors.WalletError.WalletLocked;
-    }
-
-    pub fn getPublicKey(self: Account) !crypto.PublicKey {
-        const private_key = try self.getPrivateKey();
-        return try private_key.getPublicKey(self.compressed);
-    }
-
-    pub fn withPrivateKey(self: *Account, private_key: crypto.PrivateKey, compressed: bool, allocator: std.mem.Allocator) !void {
-        self.* = try Account.initWithPrivateKey(private_key, compressed, allocator);
-    }
-};
-
 fn witnessScopeToString(scope: WitnessScope) []const u8 {
     return switch (scope) {
         .None => "None",
@@ -1205,8 +1232,9 @@ test "TransactionBuilder signing with account key" {
     var builder = TransactionBuilder.init(allocator);
     defer builder.deinit();
 
-    const account = try Account.fromWif("L3pLaHgKBf7ENNKPH1jfPM8FC9QhPCqwFyWguQ8CDB1G66p78wd6", allocator);
-    const signer = Signer.init(account.getScriptHash(), WitnessScope.CalledByEntry);
+    var account = try Account.fromWif("L3pLaHgKBf7ENNKPH1jfPM8FC9QhPCqwFyWguQ8CDB1G66p78wd6", allocator);
+    defer account.deinit();
+    const signer = Signer.init(try account.getScriptHash(), WitnessScope.CalledByEntry);
     _ = try builder.signer(signer);
 
     const script_bytes = [_]u8{0x51};
@@ -1251,8 +1279,11 @@ test "TransactionBuilder signing fails without private key" {
     _ = try builder.script(&script_bytes);
     _ = try builder.validUntilBlock(42);
 
-    const result = builder.sign(&[_]Account{Account.init(Hash160.ZERO)}, constants.NetworkMagic.MAINNET);
-    try testing.expectError(errors.WalletError.WalletLocked, result);
+    var watch_account = try Account.fromScriptHash(allocator, Hash160.ZERO);
+    defer watch_account.deinit();
+
+    const result = builder.sign(&[_]Account{watch_account}, constants.NetworkMagic.MAINNET);
+    try testing.expectError(errors.WalletError.AccountNotFound, result);
 }
 
 test "TransactionBuilder token transfer" {

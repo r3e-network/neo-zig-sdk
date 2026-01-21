@@ -116,7 +116,8 @@ test "advanced transaction operations" {
     try testing.expectEqual(neo_transaction.nonce, deserialized.nonce);
     
     // Test AccountSigner (converted from AccountSignerTests.swift)
-    const test_account = neo.transaction.Account.init(neo.Hash160.ZERO);
+    var test_account = try neo.transaction.Account.fromScriptHash(allocator, neo.Hash160.ZERO);
+    defer test_account.deinit();
     
     const none_signer = try neo.transaction.AccountSigner.none(test_account);
     try testing.expectEqual(neo.transaction.WitnessScope.None, none_signer.getWitnessScope());
@@ -154,13 +155,13 @@ test "advanced wallet operations" {
     );
     defer recovered_account.deinit();
     
-    try testing.expect(bip39_account.getScriptHash().eql(recovered_account.getScriptHash()));
+    try testing.expect((try bip39_account.getScriptHash()).eql(try recovered_account.getScriptHash()));
     
     // Test child derivation
     var child_account = try bip39_account.deriveChild(0, false);
     defer child_account.deinit();
     
-    try testing.expect(!bip39_account.getScriptHash().eql(child_account.getScriptHash()));
+    try testing.expect(!(try bip39_account.getScriptHash()).eql(try child_account.getScriptHash()));
     
     // Test BIP-32 HD wallet functionality
     const bip32_seed = "bip32 test seed for advanced wallet";
@@ -371,7 +372,7 @@ test "complete integration workflow validation" {
     var bip39_account = try neo.wallet.Bip39Account.create(allocator, "integration_password");
     defer bip39_account.deinit();
     
-    const account_script_hash = bip39_account.getScriptHash();
+    const account_script_hash = try bip39_account.getScriptHash();
     const account_address = try bip39_account.getAddress(allocator);
     defer allocator.free(account_address);
     
@@ -379,14 +380,16 @@ test "complete integration workflow validation" {
     var wallet = neo.wallet.Wallet.init(allocator);
     defer wallet.deinit();
     
-    const wallet_account = bip39_account.getAccount();
-    _ = try wallet.addAccount(wallet_account);
+    var bip39_private_key = try bip39_account.getPrivateKey();
+    _ = try wallet.importAccount(bip39_private_key, "integration_password", "BIP39 Account");
+    bip39_private_key.zeroize();
     
     // 3. Build transaction with account signer
     var tx_builder = neo.transaction.TransactionBuilder.init(allocator);
     defer tx_builder.deinit();
     
-    const account_signer = try neo.transaction.AccountSigner.calledByEntry(wallet_account);
+    const signing_account = bip39_account.getAccount();
+    const account_signer = try neo.transaction.AccountSigner.calledByEntry(signing_account);
     _ = try tx_builder.signer(account_signer.toSigner());
     
     // 4. Add contract invocation
@@ -595,7 +598,7 @@ test "final comprehensive Neo SDK validation" {
     const best_block_request = try client.getBestBlockHash();
     const block_count_request = try client.getBlockCount();
     const version_request = try client.getVersion();
-    const balance_request = try client.getNep17Balances(bip39_account.getScriptHash());
+    const balance_request = try client.getNep17Balances(try bip39_account.getScriptHash());
     
     try testing.expectEqualStrings("getbestblockhash", best_block_request.method);
     try testing.expectEqualStrings("getblockcount", block_count_request.method);

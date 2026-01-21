@@ -174,23 +174,24 @@ test "all wallet functionality tests" {
     );
     defer recovered_account.deinit();
     
-    try testing.expect(bip39_account.getScriptHash().eql(recovered_account.getScriptHash()));
+    try testing.expect((try bip39_account.getScriptHash()).eql(try recovered_account.getScriptHash()));
     
     // Test child derivation
     var child_account = try bip39_account.deriveChild(0, false);
     defer child_account.deinit();
     
-    try testing.expect(!bip39_account.getScriptHash().eql(child_account.getScriptHash()));
+    try testing.expect(!(try bip39_account.getScriptHash()).eql(try child_account.getScriptHash()));
     
     // Test hardened child derivation
     var hardened_child = try bip39_account.deriveChild(0, true);
     defer hardened_child.deinit();
     
-    try testing.expect(!child_account.getScriptHash().eql(hardened_child.getScriptHash()));
+    try testing.expect(!(try child_account.getScriptHash()).eql(try hardened_child.getScriptHash()));
     
     // Test Account base functionality (converted from AccountTests.swift)
-    const test_account = neo.transaction.Account.init(neo.Hash160.ZERO);
-    try testing.expect(test_account.getScriptHash().eql(neo.Hash160.ZERO));
+    var test_account = try neo.transaction.Account.fromScriptHash(allocator, neo.Hash160.ZERO);
+    defer test_account.deinit();
+    try testing.expect((try test_account.getScriptHash()).eql(neo.Hash160.ZERO));
     
     // Test private key operations
     const private_key = try test_account.getPrivateKey();
@@ -707,7 +708,7 @@ test "final absolute comprehensive validation" {
     );
     
     // Policy contract operations
-    const policy_params = [_]neo.ContractParameter{neo.ContractParameter.hash160(bip39_account.getScriptHash())};
+    const policy_params = [_]neo.ContractParameter{neo.ContractParameter.hash160(try bip39_account.getScriptHash())};
     _ = try script_builder.contractCall(
         neo.contract.PolicyContract.SCRIPT_HASH,
         neo.contract.PolicyContract.IS_BLOCKED,
@@ -718,7 +719,7 @@ test "final absolute comprehensive validation" {
     // Token operations
     const gas_token = neo.contract.GasToken.init(allocator, null);
     const token_params = [_]neo.ContractParameter{
-        neo.ContractParameter.hash160(bip39_account.getScriptHash()),
+        neo.ContractParameter.hash160(try bip39_account.getScriptHash()),
         neo.ContractParameter.hash160(neo.Hash160.ZERO),
         neo.ContractParameter.integer(100000000), // 1 GAS
     };

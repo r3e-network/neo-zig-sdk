@@ -8,14 +8,12 @@ const std = @import("std");
 
 const testing = std.testing;
 const SmartContract = @import("../../src/contract/smart_contract.zig").SmartContract;
-const NeoToken = @import("../../src/contract/neo_token.zig").NeoToken;
 const Account = @import("../../src/wallet/account.zig").Account;
 const Hash160 = @import("../../src/types/hash160.zig").Hash160;
 const ContractParameter = @import("../../src/types/contract_parameter.zig").ContractParameter;
 const ScriptBuilder = @import("../../src/script/script_builder.zig").ScriptBuilder;
 const ECKeyPair = @import("../../src/crypto/ec_key_pair.zig").ECKeyPair;
 const wif = @import("../../src/crypto/wif.zig");
-const NeoSwift = @import("../../src/rpc/neo_client.zig").NeoSwift;
 const constants = @import("../../src/core/constants.zig");
 const TestUtils = @import("../helpers/test_utilities.zig");
 
@@ -23,9 +21,10 @@ const TestUtils = @import("../helpers/test_utilities.zig");
 fn createTestAccount(allocator: std.mem.Allocator) !Account {
     // Create account from WIF (equivalent to Swift Account.fromWIF)
     const test_wif = "L1WMhxazScMhUrdv34JqQb1HFSQmWeN2Kpc1R9JGKwL7CDNP21uR";
-    const private_key = try wif.decode(test_wif, allocator);
+    var decode_result = try wif.decode(test_wif, allocator);
+    defer decode_result.deinit();
     
-    const key_pair = try ECKeyPair.createFromPrivateKey(private_key.private_key);
+    const key_pair = try ECKeyPair.createFromPrivateKey(decode_result.private_key);
     return try Account.init(key_pair, allocator);
 }
 
@@ -42,7 +41,7 @@ test "Smart contract construction" {
     const allocator = testing.allocator;
     
     // Create test setup (equivalent to Swift setUp)
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     const test_hashes = try createTestHashes();
     const some_script_hash = test_hashes[0];
     
@@ -51,8 +50,8 @@ test "Smart contract construction" {
     defer neo_swift.deinit();
     
     // Create smart contracts (equivalent to Swift SmartContract initialization)
-    const neo_contract = SmartContract.init(neo_script_hash, neo_swift);
-    const some_contract = SmartContract.init(some_script_hash, neo_swift);
+    const neo_contract = SmartContract.init(allocator, neo_script_hash, &neo_swift);
+    const some_contract = SmartContract.init(allocator, some_script_hash, &neo_swift);
     
     // Verify contract construction (equivalent to Swift XCTAssertEqual)
     try testing.expect(neo_contract.getScriptHash().eql(neo_script_hash));
@@ -74,7 +73,7 @@ test "Contract manifest retrieval" {
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer neo_swift.deinit();
     
-    const contract = SmartContract.init(contract_hash, neo_swift);
+    const contract = SmartContract.init(allocator, contract_hash, &neo_swift);
     
     // Test manifest structure (would require actual RPC mock for full test)
     // For now, test that contract can request manifest
@@ -94,7 +93,7 @@ test "Contract name retrieval" {
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer neo_swift.deinit();
     
-    const contract = SmartContract.init(contract_hash, neo_swift);
+    const contract = SmartContract.init(allocator, contract_hash, &neo_swift);
     
     // Test name retrieval capability
     try testing.expect(contract.getScriptHash().eql(contract_hash));
@@ -108,12 +107,12 @@ test "Function invocation with empty string validation" {
     const allocator = testing.allocator;
     
     // Create test contract
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer neo_swift.deinit();
     
-    const neo_contract = SmartContract.init(neo_script_hash, neo_swift);
+    const neo_contract = SmartContract.init(allocator, neo_script_hash, &neo_swift);
     
     // Test empty function name validation (equivalent to Swift empty string test)
     const empty_function_name = "";
@@ -135,10 +134,10 @@ test "Build invoke function script" {
     const allocator = testing.allocator;
     
     // Create test data (equivalent to Swift test setup)
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     const test_hashes = try createTestHashes();
     const recipient = test_hashes[1];
@@ -149,7 +148,7 @@ test "Build invoke function script" {
     
     // Create transfer parameters (equivalent to Swift params array)
     var transfer_params = [_]ContractParameter{
-        try ContractParameter.createHash160(account.getScriptHash(), allocator),
+        try ContractParameter.createHash160(try account.getScriptHash(), allocator),
         try ContractParameter.createHash160(recipient, allocator),
         try ContractParameter.createInteger(42, allocator),
     };
@@ -170,7 +169,7 @@ test "Build invoke function script" {
     defer test_script_builder.deinit();
     
     var test_params = [_]ContractParameter{
-        try ContractParameter.createHash160(account.getScriptHash(), allocator),
+        try ContractParameter.createHash160(try account.getScriptHash(), allocator),
         try ContractParameter.createHash160(recipient, allocator),
         try ContractParameter.createInteger(42, allocator),
     };
@@ -202,7 +201,7 @@ test "NEP-17 contract method calls" {
     const NEP17_SYMBOL = "symbol";
     const NEP17_DECIMALS = "decimals";
     
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     // Test each method script generation
     const methods = [_][]const u8{ 
@@ -235,9 +234,9 @@ test "Contract parameter creation and validation" {
     
     // Test Hash160 parameter (equivalent to Swift .hash160() parameter)
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
-    var hash160_param = try ContractParameter.createHash160(account.getScriptHash(), allocator);
+    var hash160_param = try ContractParameter.createHash160(try account.getScriptHash(), allocator);
     defer hash160_param.deinit(allocator);
     
     try hash160_param.validate();
@@ -270,13 +269,12 @@ test "Contract method validation" {
     const allocator = testing.allocator;
     
     // Create test contract
-    const contract_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const contract_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
-    const mock_config = @import("../../src/rpc/neo_swift_config.zig").NeoSwiftConfig.createDevConfig();
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const contract = SmartContract.init(contract_hash, neo_swift);
+    const contract = SmartContract.init(allocator, contract_hash, &neo_swift);
     
     // Test valid method names
     const valid_methods = [_][]const u8{ "symbol", "decimals", "totalSupply", "balanceOf", "transfer" };
@@ -309,13 +307,12 @@ test "Contract script hash validation" {
         "969a77db482f74ce27105f760efa139223431394", // Custom contract
     };
     
-    const mock_config = @import("../../src/rpc/neo_swift_config.zig").NeoSwiftConfig.createDevConfig();
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
     for (valid_hashes) |hash_string| {
         const contract_hash = try Hash160.initWithString(hash_string);
-        const contract = SmartContract.init(contract_hash, neo_swift);
+        const contract = SmartContract.init(allocator, contract_hash, &neo_swift);
         
         try contract.validate();
         try testing.expect(contract.getScriptHash().eql(contract_hash));
@@ -327,16 +324,15 @@ test "Contract equality and hashing" {
     const allocator = testing.allocator;
     
     // Create test contracts
-    const contract_hash1 = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
-    const contract_hash2 = try Hash160.initWithString(constants.NativeContracts.GAS_TOKEN);
+    const contract_hash1 = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
+    const contract_hash2 = Hash160.fromArray(constants.NativeContracts.GAS_TOKEN);
     
-    const mock_config = @import("../../src/rpc/neo_swift_config.zig").NeoSwiftConfig.createDevConfig();
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const contract1a = SmartContract.init(contract_hash1, neo_swift);
-    const contract1b = SmartContract.init(contract_hash1, neo_swift);
-    const contract2 = SmartContract.init(contract_hash2, neo_swift);
+    const contract1a = SmartContract.init(allocator, contract_hash1, &neo_swift);
+    const contract1b = SmartContract.init(allocator, contract_hash1, &neo_swift);
+    const contract2 = SmartContract.init(allocator, contract_hash2, &neo_swift);
     
     // Test equality
     try testing.expect(contract1a.eql(contract1b));
@@ -356,17 +352,17 @@ test "Contract invocation script generation" {
     const allocator = testing.allocator;
     
     // Test complex transfer script generation (equivalent to Swift transfer test)
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     const test_hashes = try createTestHashes();
     const recipient = test_hashes[1];
     
     // Create transfer parameters (equivalent to Swift parameter setup)
     var transfer_params = [_]ContractParameter{
-        try ContractParameter.createHash160(account.getScriptHash(), allocator),
+        try ContractParameter.createHash160(try account.getScriptHash(), allocator),
         try ContractParameter.createHash160(recipient, allocator),
         try ContractParameter.createInteger(1000000, allocator), // 1 NEO
     };
@@ -388,7 +384,7 @@ test "Contract invocation script generation" {
     defer test_builder.deinit();
     
     var test_params = [_]ContractParameter{
-        try ContractParameter.createHash160(account.getScriptHash(), allocator),
+        try ContractParameter.createHash160(try account.getScriptHash(), allocator),
         try ContractParameter.createHash160(recipient, allocator),
         try ContractParameter.createInteger(1000000, allocator),
     };
@@ -413,21 +409,20 @@ test "Contract state and properties" {
     const allocator = testing.allocator;
     
     // Test NEO token contract properties
-    const neo_script_hash = try Hash160.initWithString(constants.NativeContracts.NEO_TOKEN);
+    const neo_script_hash = Hash160.fromArray(constants.NativeContracts.NEO_TOKEN);
     
-    const mock_config = @import("../../src/rpc/neo_swift_config.zig").NeoSwiftConfig.createDevConfig();
     var neo_swift = try TestUtils.makeNeoSwiftStub(allocator);
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
-    const neo_contract = SmartContract.init(neo_script_hash, neo_swift);
+    const neo_contract = SmartContract.init(allocator, neo_script_hash, &neo_swift);
     
     // Test contract identification
     try testing.expect(neo_contract.getScriptHash().eql(neo_script_hash));
     try testing.expect(neo_contract.isNativeContract());
     
     // Test GAS token contract
-    const gas_script_hash = try Hash160.initWithString(constants.NativeContracts.GAS_TOKEN);
-    const gas_contract = SmartContract.init(gas_script_hash, neo_swift);
+    const gas_script_hash = Hash160.fromArray(constants.NativeContracts.GAS_TOKEN);
+    const gas_contract = SmartContract.init(allocator, gas_script_hash, &neo_swift);
     
     try testing.expect(gas_contract.isNativeContract());
     try testing.expect(!neo_contract.getScriptHash().eql(gas_contract.getScriptHash()));
@@ -439,10 +434,10 @@ test "Contract parameter type validation" {
     
     // Test various parameter types for contract calls
     var account = try createTestAccount(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     // Test Hash160 parameter validation
-    var hash160_param = try ContractParameter.createHash160(account.getScriptHash(), allocator);
+    var hash160_param = try ContractParameter.createHash160(try account.getScriptHash(), allocator);
     defer hash160_param.deinit(allocator);
     
     try testing.expect(hash160_param.isHash160());

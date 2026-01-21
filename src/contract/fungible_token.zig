@@ -34,7 +34,7 @@ pub const FungibleToken = struct {
 
     /// Gets balance for account (equivalent to Swift getBalanceOf(_ account: Account))
     pub fn getBalanceOfAccount(self: Self, account: Account) !i64 {
-        return try self.getBalanceOf(account.getScriptHash());
+        return try self.getBalanceOf(try account.getScriptHash());
     }
 
     /// Gets balance for script hash (equivalent to Swift getBalanceOf(_ scriptHash: Hash160))
@@ -50,7 +50,7 @@ pub const FungibleToken = struct {
         defer self.token.smart_contract.allocator.free(accounts);
 
         for (accounts) |account| {
-            sum += try self.getBalanceOfAccount(account);
+            sum += try self.getBalanceOf(account.getScriptHash());
         }
 
         return sum;
@@ -64,11 +64,12 @@ pub const FungibleToken = struct {
         amount: i64,
         data: ?ContractParameter,
     ) !TransactionBuilder {
-        var tx_builder = try self.transfer(from.getScriptHash(), to, amount, data);
+        const sender_hash = try from.getScriptHash();
+        var tx_builder = try self.transfer(sender_hash, to, amount, data);
 
         // Add account signer (equivalent to Swift AccountSigner.calledByEntry)
         const signer = @import("../transaction/transaction_builder.zig").Signer.init(
-            from.getScriptHash(),
+            sender_hash,
             @import("../transaction/transaction_builder.zig").WitnessScope.CalledByEntry,
         );
         _ = try tx_builder.signer(signer);
@@ -145,6 +146,41 @@ pub const FungibleToken = struct {
     pub fn getTotalSupply(self: Self) !i64 {
         return try self.token.getTotalSupply();
     }
+
+    /// Validates that a method name is part of the NEP-17 surface.
+    pub fn validateInvocation(self: Self, method: []const u8, params: []const ContractParameter) !void {
+        _ = self;
+        _ = params;
+
+        const methods = [_][]const u8{
+            Token.SYMBOL,
+            Token.DECIMALS,
+            Token.TOTAL_SUPPLY,
+            BALANCE_OF,
+            TRANSFER,
+        };
+
+        for (methods) |known| {
+            if (std.mem.eql(u8, method, known)) return;
+        }
+
+        return errors.ContractError.InvalidMethod;
+    }
+
+    /// Gets script hash for this token.
+    pub fn getScriptHash(self: Self) Hash160 {
+        return self.token.getScriptHash();
+    }
+
+    /// Validates the underlying token configuration.
+    pub fn validate(self: Self) !void {
+        return self.token.validate();
+    }
+
+    /// Returns true if this token is backed by a native contract.
+    pub fn isNativeContract(self: Self) bool {
+        return self.token.isNativeContract();
+    }
 };
 
 /// Transfer recipient structure (converted from Swift transfer patterns)
@@ -176,10 +212,9 @@ test "FungibleToken creation and basic operations" {
     const token_hash = try Hash160.initWithString("d2a4cff31913016155e38e474a2c06d08be276cf"); // GAS token
     const fungible_token = FungibleToken.init(allocator, token_hash, null);
 
-    // Test balance query (stub implementation returns a mocked value)
+    // Test balance query (requires RPC client)
     const test_script_hash = Hash160.ZERO;
-    const balance = try fungible_token.getBalanceOf(test_script_hash);
-    try testing.expect(balance >= 0);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, fungible_token.getBalanceOf(test_script_hash));
 }
 
 test "FungibleToken transfer operations" {
@@ -240,13 +275,7 @@ test "FungibleToken token information" {
     const token_hash = Hash160.ZERO;
     const fungible_token = FungibleToken.init(allocator, token_hash, null);
 
-    const symbol = try fungible_token.getSymbol();
-    defer allocator.free(symbol);
-    try testing.expectEqualStrings("UNKNOWN", symbol);
-
-    const decimals = try fungible_token.getDecimals();
-    try testing.expect(decimals <= 18);
-
-    const total_supply = try fungible_token.getTotalSupply();
-    try testing.expect(total_supply >= 0);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, fungible_token.getSymbol());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, fungible_token.getDecimals());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, fungible_token.getTotalSupply());
 }

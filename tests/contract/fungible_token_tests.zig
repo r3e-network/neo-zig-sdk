@@ -18,7 +18,7 @@ test "Fungible token creation and validation" {
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
     const token_hash = try Hash160.initWithString("0x1234567890abcdef1234567890abcdef12345678");
-    const fungible_token = FungibleToken.init(token_hash, neo_swift);
+    const fungible_token = FungibleToken.init(allocator, token_hash, &neo_swift);
     
     try testing.expect(fungible_token.getScriptHash().eql(token_hash));
     try fungible_token.validate();
@@ -31,7 +31,7 @@ test "NEP-17 standard methods" {
     defer TestUtils.destroyNeoSwiftStub(&neo_swift);
     
     const token_hash = try Hash160.initWithString("0x1234567890abcdef1234567890abcdef12345678");
-    const fungible_token = FungibleToken.init(token_hash, neo_swift);
+    const fungible_token = FungibleToken.init(allocator, token_hash, &neo_swift);
     
     const nep17_methods = [_][]const u8{ "symbol", "decimals", "totalSupply", "balanceOf", "transfer" };
     

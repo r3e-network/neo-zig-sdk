@@ -8,7 +8,6 @@ const std = @import("std");
 const constants = @import("../core/constants.zig");
 const errors = @import("../core/errors.zig");
 const Hash160 = @import("../types/hash160.zig").Hash160;
-const Address = @import("../types/address.zig").Address;
 const Signer = @import("transaction_builder.zig").Signer;
 const WitnessScope = @import("transaction_builder.zig").WitnessScope;
 const Account = @import("transaction_builder.zig").Account;
@@ -24,7 +23,7 @@ pub const AccountSigner = struct {
 
     /// Creates account signer (equivalent to Swift private init)
     fn initPrivate(account: Account, scope: WitnessScope) !Self {
-        const signer = Signer.init(account.getScriptHash(), scope);
+        const signer = Signer.init(try account.getScriptHash(), scope);
 
         return Self{
             .account = account,
@@ -122,7 +121,8 @@ pub const AccountSigner = struct {
         try self.signer.validate();
 
         // Additional account-specific validation
-        if (!self.account.getScriptHash().eql(self.signer.signer_hash)) {
+        const account_hash = try self.account.getScriptHash();
+        if (!account_hash.eql(self.signer.signer_hash)) {
             return errors.TransactionError.InvalidSigner;
         }
     }
@@ -190,10 +190,11 @@ pub const AccountSignerFactory = struct {
 // Tests (converted from Swift AccountSigner tests)
 test "AccountSigner creation with different scopes" {
     const testing = std.testing;
-    _ = testing.allocator;
+    const allocator = testing.allocator;
 
     // Create test account
-    const test_account = Account.init(Hash160.ZERO);
+    var test_account = try Account.fromScriptHash(allocator, Hash160.ZERO);
+    defer test_account.deinit();
 
     // Test none scope (equivalent to Swift none tests)
     const none_signer = try AccountSigner.none(test_account);
@@ -231,9 +232,10 @@ test "AccountSigner creation from hash" {
 
 test "AccountSigner validation and context" {
     const testing = std.testing;
-    _ = testing.allocator;
+    const allocator = testing.allocator;
 
-    const test_account = Account.init(Hash160.ZERO);
+    var test_account = try Account.fromScriptHash(allocator, Hash160.ZERO);
+    defer test_account.deinit();
 
     // Test signer validation (equivalent to Swift validation tests)
     const signer = try AccountSigner.calledByEntry(test_account);
@@ -251,9 +253,10 @@ test "AccountSigner validation and context" {
 
 test "AccountSigner factory methods" {
     const testing = std.testing;
-    _ = testing.allocator;
+    const allocator = testing.allocator;
 
-    const sender_account = Account.init(Hash160.ZERO);
+    var sender_account = try Account.fromScriptHash(allocator, Hash160.ZERO);
+    defer sender_account.deinit();
     const receiver_hash = try Hash160.initWithString("1234567890abcdef1234567890abcdef12345678");
 
     // Test transfer signer creation

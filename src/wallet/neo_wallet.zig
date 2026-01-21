@@ -104,6 +104,13 @@ pub const Wallet = struct {
         return self.scrypt_params_field;
     }
 
+    /// Validates basic wallet metadata.
+    pub fn validate(self: Self) !void {
+        if (self.name_field.len == 0 or self.version_field.len == 0) {
+            return errors.ValidationError.InvalidParameter;
+        }
+    }
+
     /// Sets scrypt parameters (equivalent to Swift scryptParams(_ scryptParams: ScryptParams))
     pub fn scryptParams(self: *Self, params: ScryptParams) *Self {
         self.scrypt_params_field = params;

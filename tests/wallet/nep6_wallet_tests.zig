@@ -43,7 +43,7 @@ test "NEP-6 wallet account management" {
     defer nep6_wallet.deinit(allocator);
     
     var account = try Account.create(allocator);
-    defer account.deinit(allocator);
+    defer account.deinit();
     
     try nep6_wallet.addAccount(account);
     try testing.expect(nep6_wallet.getAccountCount() >= 1);

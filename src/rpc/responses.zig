@@ -16,6 +16,7 @@ const NeoVMStateType = @import("../types/neo_vm_state_type.zig").NeoVMStateType;
 const StringUtils = @import("../utils/string_extensions.zig").StringUtils;
 const PublicKey = @import("../crypto/keys.zig").PublicKey;
 pub const StackItem = @import("../types/stack_item.zig").StackItem;
+pub const TransactionAttribute = @import("../protocol/response/transaction_attribute.zig").TransactionAttribute;
 
 fn stringifyJsonValue(value: std.json.Value, allocator: std.mem.Allocator) ![]u8 {
     return try std.json.stringifyAlloc(allocator, value, .{});
@@ -474,36 +475,6 @@ pub const TransactionSigner = struct {
             }
             allocator.free(rules);
         }
-    }
-};
-
-/// Transaction attribute (converted from Swift TransactionAttribute)
-pub const TransactionAttribute = struct {
-    attribute_type: []const u8,
-    value: []const u8,
-
-    const Self = @This();
-
-    pub fn init() TransactionAttribute {
-        return TransactionAttribute{ .attribute_type = "", .value = "" };
-    }
-
-    pub fn fromJson(json_value: std.json.Value, allocator: std.mem.Allocator) !Self {
-        const obj = json_value.object;
-        const attribute_type = try allocator.dupe(u8, obj.get("type").?.string);
-        const value_json = obj.get("value") orelse std.json.Value{ .string = "" };
-
-        const value = switch (value_json) {
-            .string => |str| try allocator.dupe(u8, str),
-            else => try stringifyJsonValue(value_json, allocator),
-        };
-
-        return TransactionAttribute{ .attribute_type = attribute_type, .value = value };
-    }
-
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-        allocator.free(self.attribute_type);
-        allocator.free(self.value);
     }
 };
 
@@ -1238,10 +1209,45 @@ pub const ContractNef = struct {
     }
 };
 
+/// Contract features (storage/payable flags from manifest)
+pub const ContractFeatures = struct {
+    storage: bool,
+    payable: bool,
+
+    pub fn init() ContractFeatures {
+        return ContractFeatures{ .storage = false, .payable = false };
+    }
+
+    pub fn fromJson(json_value: std.json.Value) !ContractFeatures {
+        if (json_value == .null) return ContractFeatures.init();
+        if (json_value != .object) return errors.SerializationError.InvalidFormat;
+
+        const obj = json_value.object;
+        const storage = if (obj.get("storage")) |value|
+            switch (value) {
+                .bool => |b| b,
+                else => false,
+            }
+        else
+            false;
+
+        const payable = if (obj.get("payable")) |value|
+            switch (value) {
+                .bool => |b| b,
+                else => false,
+            }
+        else
+            false;
+
+        return ContractFeatures{ .storage = storage, .payable = payable };
+    }
+};
+
 /// Contract manifest (converted from Swift ContractManifest)
 pub const ContractManifest = struct {
     name: ?[]const u8,
     groups: []const ContractGroup,
+    features: ?ContractFeatures,
     supported_standards: []const []const u8,
     abi: ?ContractABI,
     permissions: []const ContractPermission,
@@ -1252,6 +1258,7 @@ pub const ContractManifest = struct {
         return ContractManifest{
             .name = null,
             .groups = &[_]ContractGroup{},
+            .features = null,
             .supported_standards = &[_][]const u8{},
             .abi = null,
             .permissions = &[_]ContractPermission{},
@@ -1283,6 +1290,11 @@ pub const ContractManifest = struct {
             for (groups_value.array.items) |group_value| {
                 try groups.append(try ContractGroup.fromJson(group_value, allocator));
             }
+        }
+
+        var features: ?ContractFeatures = null;
+        if (obj.get("features")) |features_value| {
+            features = try ContractFeatures.fromJson(features_value);
         }
 
         var standards = ArrayList([]const u8).init(allocator);
@@ -1360,6 +1372,7 @@ pub const ContractManifest = struct {
         return ContractManifest{
             .name = name,
             .groups = groups_slice,
+            .features = features,
             .supported_standards = standards_slice,
             .abi = abi_opt,
             .permissions = permissions_slice,
@@ -1859,4 +1872,73 @@ test "SendRawTransactionResponse parsing" {
     try testing.expect(parsed_string.success);
     const expected_hash = try Hash256.initWithString(hash_str);
     try testing.expect(parsed_string.hash.?.eql(expected_hash));
+}
+
+test "Transaction response parses typed attributes" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var tx_object = std.json.ObjectMap.init(allocator);
+
+    try json_utils.putOwnedKey(&tx_object, allocator, "hash", std.json.Value{
+        .string = try allocator.dupe(u8, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+    });
+    try json_utils.putOwnedKey(&tx_object, allocator, "size", std.json.Value{ .integer = 1 });
+    try json_utils.putOwnedKey(&tx_object, allocator, "version", std.json.Value{ .integer = 0 });
+    try json_utils.putOwnedKey(&tx_object, allocator, "nonce", std.json.Value{ .integer = 123 });
+    try json_utils.putOwnedKey(&tx_object, allocator, "sender", std.json.Value{
+        .string = try allocator.dupe(u8, "NNEoYPoZHCe7iDh6TPazBQh6M7cV8K1u4d"),
+    });
+    try json_utils.putOwnedKey(&tx_object, allocator, "sysfee", std.json.Value{
+        .string = try allocator.dupe(u8, "0"),
+    });
+    try json_utils.putOwnedKey(&tx_object, allocator, "netfee", std.json.Value{
+        .string = try allocator.dupe(u8, "0"),
+    });
+    try json_utils.putOwnedKey(&tx_object, allocator, "validuntilblock", std.json.Value{ .integer = 100 });
+    try json_utils.putOwnedKey(&tx_object, allocator, "script", std.json.Value{
+        .string = try allocator.dupe(u8, ""),
+    });
+
+    const signers_array = std.json.Array.init(allocator);
+    try json_utils.putOwnedKey(&tx_object, allocator, "signers", std.json.Value{ .array = signers_array });
+
+    const witnesses_array = std.json.Array.init(allocator);
+    try json_utils.putOwnedKey(&tx_object, allocator, "witnesses", std.json.Value{ .array = witnesses_array });
+
+    var attrs_array = std.json.Array.init(allocator);
+    {
+        var attr = std.json.ObjectMap.init(allocator);
+        try json_utils.putOwnedKey(&attr, allocator, "type", std.json.Value{ .string = try allocator.dupe(u8, "NotValidBefore") });
+        try json_utils.putOwnedKey(&attr, allocator, "height", std.json.Value{ .integer = 42 });
+        try attrs_array.append(std.json.Value{ .object = attr });
+    }
+    {
+        var attr = std.json.ObjectMap.init(allocator);
+        try json_utils.putOwnedKey(&attr, allocator, "type", std.json.Value{ .string = try allocator.dupe(u8, "Conflicts") });
+        try json_utils.putOwnedKey(&attr, allocator, "hash", std.json.Value{
+            .string = try allocator.dupe(u8, "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        });
+        try attrs_array.append(std.json.Value{ .object = attr });
+    }
+    {
+        var attr = std.json.ObjectMap.init(allocator);
+        try json_utils.putOwnedKey(&attr, allocator, "type", std.json.Value{ .string = try allocator.dupe(u8, "NotaryAssisted") });
+        try json_utils.putOwnedKey(&attr, allocator, "nkeys", std.json.Value{ .integer = 3 });
+        try attrs_array.append(std.json.Value{ .object = attr });
+    }
+    try json_utils.putOwnedKey(&tx_object, allocator, "attributes", std.json.Value{ .array = attrs_array });
+
+    const tx_value = std.json.Value{ .object = tx_object };
+    defer json_utils.freeValue(tx_value, allocator);
+
+    var transaction = try Transaction.fromJson(tx_value, allocator);
+    defer transaction.deinit(allocator);
+
+    try testing.expectEqual(@as(usize, 3), transaction.attributes.len);
+    try testing.expect(std.meta.activeTag(transaction.attributes[0]) == .NotValidBefore);
+    try testing.expectEqual(@as(u32, 42), transaction.attributes[0].NotValidBefore.height);
+    try testing.expect(std.meta.activeTag(transaction.attributes[1]) == .Conflicts);
+    try testing.expect(std.meta.activeTag(transaction.attributes[2]) == .NotaryAssisted);
+    try testing.expectEqual(@as(u8, 3), transaction.attributes[2].NotaryAssisted.n_keys);
 }

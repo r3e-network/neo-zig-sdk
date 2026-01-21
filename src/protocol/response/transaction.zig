@@ -61,14 +61,59 @@ pub const TransactionSigner = struct {
     pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
         const account_copy = try allocator.dupe(u8, self.account);
         const scopes_copy = try allocator.dupe(u8, self.scopes);
-        
+
+        var allowed_contracts_copy: ?[][]const u8 = null;
+        var allowed_groups_copy: ?[][]const u8 = null;
+        var rules_copy: ?[][]const u8 = null;
+
+        errdefer {
+            if (allowed_contracts_copy) |contracts| {
+                for (contracts) |contract| allocator.free(contract);
+                allocator.free(contracts);
+            }
+            if (allowed_groups_copy) |groups| {
+                for (groups) |group| allocator.free(group);
+                allocator.free(groups);
+            }
+            if (rules_copy) |rules| {
+                for (rules) |rule| allocator.free(rule);
+                allocator.free(rules);
+            }
+        }
+
+        if (self.allowed_contracts) |contracts| {
+            allowed_contracts_copy = try cloneStringList(contracts, allocator);
+        }
+        if (self.allowed_groups) |groups| {
+            allowed_groups_copy = try cloneStringList(groups, allocator);
+        }
+        if (self.rules) |rules| {
+            rules_copy = try cloneStringList(rules, allocator);
+        }
+
         return Self{
             .account = account_copy,
             .scopes = scopes_copy,
-            .allowed_contracts = null, // allowed contracts not parsed in this stub
-            .allowed_groups = null,
-            .rules = null,
+            .allowed_contracts = allowed_contracts_copy,
+            .allowed_groups = allowed_groups_copy,
+            .rules = rules_copy,
         };
+    }
+
+    fn cloneStringList(list: []const []const u8, allocator: std.mem.Allocator) ![][]const u8 {
+        var copies = try allocator.alloc([]const u8, list.len);
+        var filled: usize = 0;
+        errdefer {
+            for (copies[0..filled]) |item| allocator.free(item);
+            allocator.free(copies);
+        }
+
+        for (list) |item| {
+            copies[filled] = try allocator.dupe(u8, item);
+            filled += 1;
+        }
+
+        return copies;
     }
 };
 

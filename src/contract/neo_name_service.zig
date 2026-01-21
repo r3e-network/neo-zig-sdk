@@ -15,6 +15,9 @@ const TransactionBuilder = @import("../transaction/transaction_builder.zig").Tra
 const StackItem = @import("../rpc/responses.zig").StackItem;
 const RecordType = @import("../types/record_type.zig").RecordType;
 const Iterator = @import("iterator.zig").Iterator;
+const NeoSwift = @import("../rpc/neo_client.zig").NeoSwift;
+const Signer = @import("../transaction/transaction_builder.zig").Signer;
+const StringUtils = @import("../utils/string_extensions.zig").StringUtils;
 
 /// Neo Name Service contract (converted from Swift NeoNameService)
 pub const NeoNameService = struct {
@@ -51,6 +54,21 @@ pub const NeoNameService = struct {
         };
     }
 
+    /// Gets contract script hash (forwarded from underlying token).
+    pub fn getScriptHash(self: Self) Hash160 {
+        return self.non_fungible_token.getScriptHash();
+    }
+
+    /// Validates that the contract has a usable script hash.
+    pub fn validate(self: Self) !void {
+        return self.non_fungible_token.validate();
+    }
+
+    /// Returns true if this contract is native.
+    pub fn isNativeContract(self: Self) bool {
+        return self.non_fungible_token.isNativeContract();
+    }
+
     /// Gets contract name (equivalent to Swift getName() override)
     pub fn getName(self: Self) ![]const u8 {
         _ = self;
@@ -81,15 +99,7 @@ pub const NeoNameService = struct {
 
     /// Gets all root domains (equivalent to Swift roots)
     pub fn getRoots(self: Self) !Iterator([]const u8) {
-        // This would make RPC call and return iterator
-        _ = self;
-        return Iterator([]const u8).init(
-            self.non_fungible_token.token.smart_contract.allocator,
-            self.non_fungible_token.token.smart_contract.neo_swift,
-            "roots_session",
-            "roots_iterator",
-            stringMapper,
-        );
+        return try self.callFunctionReturningIterator([]const u8, ROOTS, &[_]ContractParameter{}, stringMapper);
     }
 
     // ============================================================================
@@ -194,16 +204,7 @@ pub const NeoNameService = struct {
     /// Gets all domain records (equivalent to Swift getAllRecords)
     pub fn getAllRecords(self: Self, domain_name: []const u8) !Iterator(DomainRecord) {
         const params = [_]ContractParameter{ContractParameter.string(domain_name)};
-
-        // This would make RPC call and return iterator
-        _ = params;
-        return Iterator(DomainRecord).init(
-            self.non_fungible_token.token.smart_contract.allocator,
-            self.non_fungible_token.token.smart_contract.neo_swift,
-            "records_session",
-            "records_iterator",
-            recordMapper,
-        );
+        return try self.callFunctionReturningIterator(DomainRecord, GET_ALL_RECORDS, &params, recordMapper);
     }
 
     /// Deletes domain record (equivalent to Swift deleteRecord)
@@ -240,12 +241,99 @@ pub const NeoNameService = struct {
     pub fn getDomainProperties(self: Self, domain_name: []const u8) !DomainProperties {
         const params = [_]ContractParameter{ContractParameter.string(domain_name)};
 
-        // This would make RPC call and parse properties
-        _ = params;
+        const smart_contract = self.non_fungible_token.token.smart_contract;
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
+
+        const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
+        var request = try neo_swift.invokeFunction(smart_contract.script_hash, PROPERTIES, &params, &[_]Signer{});
+        var invocation = try request.send();
+        const service_allocator = neo_swift.getService().getAllocator();
+        defer invocation.deinit(service_allocator);
+
+        if (invocation.hasFaulted()) {
+            return errors.ContractError.ContractExecutionFailed;
+        }
+
+        const stack_item = try invocation.getFirstStackItem();
+        const map = switch (stack_item) {
+            .Map => |m| m,
+            else => return errors.SerializationError.InvalidFormat,
+        };
+
+        var name: ?[]const u8 = null;
+        var expiration: ?u64 = null;
+        var admin: ?Hash160 = null;
+
+        errdefer if (name) |n| smart_contract.allocator.free(n);
+
+        var it = map.iterator();
+        while (it.next()) |entry| {
+            const key = try entry.key_ptr.getString(smart_contract.allocator);
+            defer smart_contract.allocator.free(key);
+
+            if (std.mem.eql(u8, key, NAME_PROPERTY)) {
+                const value = try entry.value_ptr.getString(smart_contract.allocator);
+                if (name) |existing| smart_contract.allocator.free(existing);
+                name = value;
+                continue;
+            }
+
+            if (std.mem.eql(u8, key, EXPIRATION_PROPERTY)) {
+                const exp_value = try entry.value_ptr.getInteger();
+                if (exp_value < 0) return errors.SerializationError.InvalidFormat;
+                expiration = @intCast(exp_value);
+                continue;
+            }
+
+            if (std.mem.eql(u8, key, ADMIN_PROPERTY)) {
+                if (entry.value_ptr.* == .Any) {
+                    if (entry.value_ptr.Any == null) {
+                        admin = null;
+                        continue;
+                    }
+                    const any_value = entry.value_ptr.Any.?;
+                    if (any_value.len == 0) {
+                        admin = null;
+                        continue;
+                    }
+                    if (!StringUtils.isValidHex(any_value)) {
+                        return errors.SerializationError.InvalidFormat;
+                    }
+                    admin = try Hash160.initWithString(any_value);
+                    continue;
+                }
+
+                const bytes = try entry.value_ptr.getByteArray(smart_contract.allocator);
+                defer smart_contract.allocator.free(bytes);
+
+                if (bytes.len == 0) {
+                    admin = null;
+                    continue;
+                }
+
+                if (bytes.len == constants.HASH160_SIZE) {
+                    var buf: [constants.HASH160_SIZE]u8 = undefined;
+                    @memcpy(&buf, bytes);
+                    std.mem.reverse(u8, &buf);
+                    admin = Hash160.fromArray(buf);
+                    continue;
+                }
+
+                if (!StringUtils.isValidHex(bytes)) {
+                    return errors.SerializationError.InvalidFormat;
+                }
+                admin = try Hash160.initWithString(bytes);
+            }
+        }
+
+        if (name == null or expiration == null) {
+            return errors.SerializationError.InvalidFormat;
+        }
+
         return DomainProperties{
-            .name = try self.non_fungible_token.token.smart_contract.allocator.dupe(u8, domain_name),
-            .expiration = 0,
-            .admin = null,
+            .name = name.?,
+            .expiration = expiration.?,
+            .admin = admin,
         };
     }
 
@@ -266,6 +354,42 @@ pub const NeoNameService = struct {
         const expiration = try self.getDomainExpiration(domain_name);
         const current_time = @as(u64, @intCast(std.time.timestamp()));
         return current_time > expiration;
+    }
+
+    fn callFunctionReturningIterator(
+        self: Self,
+        comptime T: type,
+        function_name: []const u8,
+        params: []const ContractParameter,
+        mapper: fn (StackItem, std.mem.Allocator) !T,
+    ) !Iterator(T) {
+        const smart_contract = self.non_fungible_token.token.smart_contract;
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
+
+        const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
+        var request = try neo_swift.invokeFunction(smart_contract.script_hash, function_name, params, &[_]Signer{});
+        var invocation = try request.send();
+        const service_allocator = neo_swift.getService().getAllocator();
+        defer invocation.deinit(service_allocator);
+
+        if (invocation.hasFaulted()) {
+            return errors.ContractError.ContractExecutionFailed;
+        }
+
+        const session_id = invocation.session orelse return errors.NetworkError.InvalidResponse;
+        const first_item = try invocation.getFirstStackItem();
+        const interop = switch (first_item) {
+            .InteropInterface => |iface| iface,
+            else => return errors.SerializationError.InvalidFormat,
+        };
+
+        return try Iterator(T).init(
+            smart_contract.allocator,
+            smart_contract.neo_swift.?,
+            session_id,
+            interop.iterator_id,
+            mapper,
+        );
     }
 };
 
@@ -312,9 +436,25 @@ fn stringMapper(stack_item: StackItem, allocator: std.mem.Allocator) ![]const u8
 }
 
 fn recordMapper(stack_item: StackItem, allocator: std.mem.Allocator) !DomainRecord {
-    // Parse record from stack item (would parse actual structure)
-    const data = try stack_item.getString(allocator);
-    return DomainRecord.init(RecordType.TXT, data); // basic
+    const values = switch (stack_item) {
+        .Array => |items| items,
+        .Struct => |items| items,
+        else => return errors.SerializationError.InvalidFormat,
+    };
+
+    if (values.len < 2) return errors.SerializationError.InvalidFormat;
+
+    const record_type_value = try values[0].getInteger();
+    if (record_type_value < 0 or record_type_value > 0xFF) {
+        return errors.SerializationError.InvalidFormat;
+    }
+
+    const record_type = RecordType.fromByte(@intCast(record_type_value)) orelse {
+        return errors.SerializationError.InvalidFormat;
+    };
+
+    const data = try values[1].getString(allocator);
+    return DomainRecord.init(record_type, data);
 }
 
 /// NNS utilities
@@ -481,8 +621,7 @@ test "NeoNameService domain operations" {
     const nns = NeoNameService.init(allocator, NNSUtils.DEFAULT_NNS_RESOLVER, null);
 
     // Test domain availability check (equivalent to Swift domain tests)
-    const is_available = try nns.isAvailable("test.neo");
-    _ = is_available; // Would return actual availability
+    try testing.expectError(errors.NeoError.InvalidConfiguration, nns.isAvailable("test.neo"));
 
     // Test domain registration
     var register_tx = try nns.register("newdomain.neo", Hash160.ZERO, null);

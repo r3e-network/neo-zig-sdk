@@ -64,14 +64,27 @@ pub const NeoToken = struct {
 
     /// Gets token symbol (equivalent to Swift getSymbol() override)
     pub fn getSymbol(self: Self) ![]const u8 {
-        _ = self;
-        return SYMBOL;
+        return try self.fungible_token.getSymbol();
     }
 
     /// Gets token decimals (equivalent to Swift getDecimals() override)
     pub fn getDecimals(self: Self) !u8 {
+        return try self.fungible_token.getDecimals();
+    }
+
+    /// Gets total supply (delegates to fungible token)
+    pub fn getTotalSupply(self: Self) !i64 {
+        return try self.fungible_token.getTotalSupply();
+    }
+
+    /// Validates that a method name is non-empty before invocation.
+    pub fn validateInvocation(self: Self, method: []const u8, params: []const ContractParameter) !void {
         _ = self;
-        return DECIMALS;
+        _ = params;
+
+        if (method.len == 0) {
+            return errors.throwIllegalArgument("The invocation function must not be empty");
+        }
     }
 
     /// Gets balance for account (delegates to fungible token)
@@ -90,6 +103,21 @@ pub const NeoToken = struct {
         return try self.fungible_token.transfer(from, to, amount, data);
     }
 
+    /// Gets script hash for this token.
+    pub fn getScriptHash(self: Self) Hash160 {
+        return self.fungible_token.getScriptHash();
+    }
+
+    /// Validates the underlying token configuration.
+    pub fn validate(self: Self) !void {
+        return self.fungible_token.validate();
+    }
+
+    /// Returns true if this token is backed by a native contract.
+    pub fn isNativeContract(self: Self) bool {
+        return self.fungible_token.isNativeContract();
+    }
+
     // ============================================================================
     // GOVERNANCE METHODS (converted from Swift governance functionality)
     // ============================================================================
@@ -97,9 +125,7 @@ pub const NeoToken = struct {
     /// Gets all candidates (equivalent to Swift getCandidates)
     pub fn getCandidates(self: Self) ![]Candidate {
         const smart_contract = self.fungible_token.token.smart_contract;
-        if (smart_contract.neo_swift == null) {
-            return try smart_contract.allocator.alloc(Candidate, 0);
-        }
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
 
         const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
         var request = try neo_swift.invokeFunction(SCRIPT_HASH, GET_CANDIDATES, &[_]ContractParameter{}, &[_]Signer{});
@@ -172,9 +198,7 @@ pub const NeoToken = struct {
         const params = [_]ContractParameter{ContractParameter.hash160(script_hash)};
 
         const smart_contract = self.fungible_token.token.smart_contract;
-        if (smart_contract.neo_swift == null) {
-            return AccountState.init();
-        }
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
 
         const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
         var request = try neo_swift.invokeFunction(SCRIPT_HASH, GET_ACCOUNT_STATE, &params, &[_]Signer{});
@@ -214,9 +238,7 @@ pub const NeoToken = struct {
 
     fn getPublicKeyList(self: Self, function_name: []const u8) ![][33]u8 {
         const smart_contract = self.fungible_token.token.smart_contract;
-        if (smart_contract.neo_swift == null) {
-            return try smart_contract.allocator.alloc([33]u8, 0);
-        }
+        if (smart_contract.neo_swift == null) return errors.NeoError.InvalidConfiguration;
 
         const neo_swift: *NeoSwift = @ptrCast(@alignCast(smart_contract.neo_swift.?));
         var request = try neo_swift.invokeFunction(SCRIPT_HASH, function_name, &[_]ContractParameter{}, &[_]Signer{});
@@ -350,8 +372,8 @@ test "NeoToken constants and properties" {
 
     // Test constant values (equivalent to Swift constant tests)
     try testing.expectEqualStrings("NeoToken", try neo_token.getName());
-    try testing.expectEqualStrings("NEO", try neo_token.getSymbol());
-    try testing.expectEqual(@as(u8, 0), try neo_token.getDecimals());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, neo_token.getSymbol());
+    try testing.expectError(errors.NeoError.InvalidConfiguration, neo_token.getDecimals());
 
     // Test script hash (equivalent to Swift SCRIPT_HASH test)
     const script_hash = neo_token.fungible_token.token.getScriptHash();
@@ -386,12 +408,12 @@ test "NeoToken fee and price operations" {
     const neo_token = NeoToken.init(allocator, null);
 
     // Test GAS per block operations (equivalent to Swift GAS per block tests)
-    try testing.expect(try neo_token.getGasPerBlock() >= 0);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, neo_token.getGasPerBlock());
     var set_gas_tx = try neo_token.setGasPerBlock(500000000);
     defer set_gas_tx.deinit();
     try testing.expect(set_gas_tx.getScript() != null);
 
-    try testing.expect(try neo_token.getRegisterPrice() >= 0);
+    try testing.expectError(errors.NeoError.InvalidConfiguration, neo_token.getRegisterPrice());
     var set_price_tx = try neo_token.setRegisterPrice(100000000000);
     defer set_price_tx.deinit();
     try testing.expect(set_price_tx.getScript() != null);

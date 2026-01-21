@@ -10,6 +10,7 @@ const errors = @import("../core/errors.zig");
 const Hash160 = @import("../types/hash160.zig").Hash160;
 const Hash256 = @import("../types/hash256.zig").Hash256;
 const ContractParameter = @import("../types/contract_parameter.zig").ContractParameter;
+const ContractParameterContext = @import("../types/contract_parameter.zig").ContractParameterContext;
 const json_utils = @import("../utils/json_utils.zig");
 
 /// Converts ContractParameter to JSON for RPC calls
@@ -95,6 +96,154 @@ pub fn parameterToJson(param: ContractParameter, allocator: std.mem.Allocator) !
     }
 
     return std.json.Value{ .object = param_obj };
+}
+
+/// Parses ContractParameter from JSON (inverse of parameterToJson for supported types).
+pub fn parameterFromJson(param_json: std.json.Value, allocator: std.mem.Allocator) !ContractParameter {
+    if (param_json != .object) return errors.SerializationError.InvalidFormat;
+
+    const obj = param_json.object;
+    const type_value = obj.get("type") orelse return errors.SerializationError.InvalidFormat;
+    if (type_value != .string) return errors.SerializationError.InvalidFormat;
+
+    const type_str = type_value.string;
+    const value = obj.get("value") orelse std.json.Value{ .null = {} };
+
+    if (std.mem.eql(u8, type_str, "Any")) return ContractParameter{ .Any = {} };
+    if (std.mem.eql(u8, type_str, "Void")) return ContractParameter{ .Void = {} };
+
+    if (std.mem.eql(u8, type_str, "Boolean")) {
+        return switch (value) {
+            .bool => |b| ContractParameter.boolean(b),
+            .integer => |i| ContractParameter.boolean(i != 0),
+            .string => |s| ContractParameter.boolean(std.mem.eql(u8, s, "true") or std.mem.eql(u8, s, "1")),
+            else => errors.SerializationError.InvalidFormat,
+        };
+    }
+
+    if (std.mem.eql(u8, type_str, "Integer")) {
+        return switch (value) {
+            .integer => |i| ContractParameter.integer(i),
+            .string => |s| ContractParameter.integer(std.fmt.parseInt(i64, s, 10) catch return errors.SerializationError.InvalidFormat),
+            else => errors.SerializationError.InvalidFormat,
+        };
+    }
+
+    if (std.mem.eql(u8, type_str, "String")) {
+        if (value != .string) return errors.SerializationError.InvalidFormat;
+        const raw = value.string;
+
+        const decoded = @import("../utils/string_extensions.zig").StringUtils.base64Decoded(raw, allocator) catch {
+            return ContractParameter.string(try allocator.dupe(u8, raw));
+        };
+        return ContractParameter.string(decoded);
+    }
+
+    if (std.mem.eql(u8, type_str, "ByteArray")) {
+        if (value != .string) return errors.SerializationError.InvalidFormat;
+        const raw = value.string;
+
+        const decoded = @import("../utils/string_extensions.zig").StringUtils.base64Decoded(raw, allocator) catch blk: {
+            const bytes = @import("../utils/string_extensions.zig").StringUtils.bytesFromHex(raw, allocator) catch return errors.SerializationError.InvalidFormat;
+            break :blk bytes;
+        };
+        return ContractParameter.byteArray(decoded);
+    }
+
+    if (std.mem.eql(u8, type_str, "Hash160")) {
+        if (value != .string) return errors.SerializationError.InvalidFormat;
+        return ContractParameter.hash160(try Hash160.initWithString(value.string));
+    }
+
+    if (std.mem.eql(u8, type_str, "Hash256")) {
+        if (value != .string) return errors.SerializationError.InvalidFormat;
+        return ContractParameter.hash256(try Hash256.initWithString(value.string));
+    }
+
+    if (std.mem.eql(u8, type_str, "PublicKey")) {
+        if (value != .string) return errors.SerializationError.InvalidFormat;
+        var key_buf: [constants.PUBLIC_KEY_SIZE_COMPRESSED]u8 = undefined;
+        const bytes = std.fmt.hexToBytes(&key_buf, value.string) catch return errors.SerializationError.InvalidFormat;
+        return try ContractParameter.publicKeyChecked(bytes);
+    }
+
+    if (std.mem.eql(u8, type_str, "Signature")) {
+        if (value != .string) return errors.SerializationError.InvalidFormat;
+        var sig_buf: [constants.SIGNATURE_SIZE]u8 = undefined;
+        const bytes = std.fmt.hexToBytes(&sig_buf, value.string) catch return errors.SerializationError.InvalidFormat;
+        return try ContractParameter.signatureChecked(bytes);
+    }
+
+    if (std.mem.eql(u8, type_str, "Array")) {
+        if (value != .array) return errors.SerializationError.InvalidFormat;
+        var items = ArrayList(ContractParameter).init(allocator);
+        errdefer {
+            for (items.items) |item| {
+                item.deinit(allocator);
+            }
+            items.deinit();
+        }
+        for (value.array.items) |item_json| {
+            try items.append(try parameterFromJson(item_json, allocator));
+        }
+        return ContractParameter.array(try items.toOwnedSlice());
+    }
+
+    if (std.mem.eql(u8, type_str, "Map")) {
+        var map = std.HashMap(ContractParameter, ContractParameter, ContractParameterContext, std.hash_map.default_max_load_percentage).init(allocator);
+        errdefer {
+            var it = map.iterator();
+            while (it.next()) |entry| {
+                entry.key_ptr.*.deinit(allocator);
+                entry.value_ptr.*.deinit(allocator);
+            }
+            map.deinit();
+        }
+
+        switch (value) {
+            .array => |arr| {
+                for (arr.items) |entry| {
+                    if (entry != .object) return errors.SerializationError.InvalidFormat;
+                    const entry_obj = entry.object;
+                    const key_json = entry_obj.get("key") orelse return errors.SerializationError.InvalidFormat;
+                    const value_json = entry_obj.get("value") orelse return errors.SerializationError.InvalidFormat;
+                    const key_param = try parameterFromJson(key_json, allocator);
+                    const value_param = try parameterFromJson(value_json, allocator);
+                    try map.put(key_param, value_param);
+                }
+            },
+            .object => |obj_val| {
+                var it = obj_val.iterator();
+                while (it.next()) |entry| {
+                    const key_param = ContractParameter.string(try allocator.dupe(u8, entry.key_ptr.*));
+                    const value_param = if (entry.value_ptr.* == .object and entry.value_ptr.object.get("type") != null) blk: {
+                        break :blk try parameterFromJson(entry.value_ptr.*, allocator);
+                    } else blk: {
+                        const value_str = switch (entry.value_ptr.*) {
+                            .string => |s| try allocator.dupe(u8, s),
+                            .integer => |i| try std.fmt.allocPrint(allocator, "{d}", .{i}),
+                            .bool => |b| try allocator.dupe(u8, if (b) "true" else "false"),
+                            .number_string => |s| try allocator.dupe(u8, s),
+                            else => return errors.SerializationError.InvalidFormat,
+                        };
+                        break :blk ContractParameter.string(value_str);
+                    };
+                    try map.put(key_param, value_param);
+                }
+            },
+            else => return errors.SerializationError.InvalidFormat,
+        }
+
+        return ContractParameter{ .Map = map };
+    }
+
+    return errors.SerializationError.InvalidFormat;
+}
+
+/// Frees any allocator-owned memory within a ContractParameter.
+/// Call this only for parameters whose contents were allocated by this allocator.
+pub fn freeParameter(param: ContractParameter, allocator: std.mem.Allocator) void {
+    param.deinit(allocator);
 }
 
 /// Parses stack item value based on type

@@ -71,17 +71,18 @@ test "AccountSigner produces consistent base signer" {
     const allocator = testing.allocator;
 
     const private_key = neo.crypto.PrivateKey.generate();
-    const account = try neo.transaction.Account.initWithPrivateKey(private_key, true, allocator);
+    var account = try neo.transaction.Account.initWithPrivateKey(private_key, true, allocator);
+    defer account.deinit();
 
     const entry_signer = try neo.transaction.AccountSigner.calledByEntry(account);
     try entry_signer.validate();
     try testing.expectEqual(neo.transaction.WitnessScope.CalledByEntry, entry_signer.getWitnessScope());
-    try testing.expect(entry_signer.getScriptHash().eql(account.getScriptHash()));
+    try testing.expect(entry_signer.getScriptHash().eql(try account.getScriptHash()));
 
     const global_signer = try neo.transaction.AccountSigner.global(account);
     try global_signer.validate();
     try testing.expectEqual(neo.transaction.WitnessScope.Global, global_signer.getWitnessScope());
-    try testing.expect(global_signer.getScriptHash().eql(account.getScriptHash()));
+    try testing.expect(global_signer.getScriptHash().eql(try account.getScriptHash()));
 
     var allowed_contracts = [_]neo.Hash160{
         try neo.Hash160.initWithString("0xabcdef1234567890abcdef1234567890abcdef12"),

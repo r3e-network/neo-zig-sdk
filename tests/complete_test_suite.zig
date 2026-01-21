@@ -144,8 +144,8 @@ test "complete smart contract functionality" {
     // Test GasToken (GasTokenTests.swift equivalent)
     const gas_token = neo.contract.GasToken.init(allocator, null);
     
-    try testing.expectEqualStrings("GAS", try gas_token.getSymbol());
-    try testing.expectEqual(@as(u8, 8), try gas_token.getDecimals());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getSymbol());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getDecimals());
     
     var gas_transfer = try gas_token.transfer(neo.Hash160.ZERO, neo.Hash160.ZERO, 100000000, null);
     defer gas_transfer.deinit();
@@ -155,8 +155,8 @@ test "complete smart contract functionality" {
     // Test NeoToken (NeoTokenTests.swift equivalent)
     const neo_token = neo.contract.NeoToken.init(allocator, null);
     
-    try testing.expectEqualStrings("NEO", try neo_token.getSymbol());
-    try testing.expectEqual(@as(u8, 0), try neo_token.getDecimals());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, neo_token.getSymbol());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, neo_token.getDecimals());
     
     const test_pub_key = [_]u8{0x02} ++ [_]u8{0xAB} ** 32;
     var register_tx = try neo_token.registerCandidate(test_pub_key);
@@ -576,7 +576,7 @@ test "complete Swift API compatibility validation" {
     try testing.expect(smart_contract.getScriptHash().eql(neo.Hash160.ZERO));
     
     const gas_token = neo.contract.GasToken.init(allocator, null);
-    try testing.expectEqualStrings("GAS", try gas_token.getSymbol());
+    try testing.expectError(neo.errors.NeoError.InvalidConfiguration, gas_token.getSymbol());
     
     // Wallet types (Swift Wallet, Account, etc.)
     var wallet = neo.wallet.Wallet.init(allocator);

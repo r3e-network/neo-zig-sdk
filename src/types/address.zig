@@ -66,6 +66,10 @@ pub const Address = struct {
         return try base58.encodeCheck(&payload, allocator);
     }
 
+    pub fn isEmpty(self: Self) bool {
+        return self.script_hash.eql(Hash160.ZERO);
+    }
+
     pub fn isValid(self: Self) bool {
         return self.version == constants.AddressConstants.ADDRESS_VERSION or
             self.version == constants.AddressConstants.MULTISIG_ADDRESS_VERSION;

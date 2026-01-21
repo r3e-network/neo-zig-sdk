@@ -5,7 +5,6 @@
 
 const std = @import("std");
 
-const constants = @import("../core/constants.zig");
 const errors = @import("../core/errors.zig");
 const JsonRpc2_0Rx = @import("json_rpc_2_0_rx.zig").JsonRpc2_0Rx;
 const BlockData = @import("json_rpc_2_0_rx.zig").BlockData;
@@ -16,6 +15,8 @@ pub const NeoSwiftRx = struct {
     json_rpc_rx: JsonRpc2_0Rx,
     /// Default polling interval
     default_polling_interval_ms: u32,
+    /// Tracked local subscription count (filter/event subscriptions).
+    active_subscription_count: u32,
 
     const Self = @This();
 
@@ -24,6 +25,7 @@ pub const NeoSwiftRx = struct {
         return Self{
             .json_rpc_rx = json_rpc_rx,
             .default_polling_interval_ms = default_polling_interval_ms,
+            .active_subscription_count = 0,
         };
     }
 
@@ -119,6 +121,7 @@ pub const NeoSwiftRx = struct {
         filter: TransactionFilter,
         callback: *const fn (TransactionData) void,
     ) !TransactionSubscription {
+        self.active_subscription_count += 1;
         return TransactionSubscription{
             .filter = filter,
             .callback = callback,
@@ -134,6 +137,7 @@ pub const NeoSwiftRx = struct {
         event_name: ?[]const u8,
         callback: *const fn (ContractEvent) void,
     ) !ContractEventSubscription {
+        self.active_subscription_count += 1;
         return ContractEventSubscription{
             .contract_hash = contract_hash,
             .event_name = event_name,
@@ -145,15 +149,18 @@ pub const NeoSwiftRx = struct {
 
     /// Gets current subscription count (utility method)
     pub fn getActiveSubscriptionCount(self: Self) u32 {
-        // Would track active subscriptions
-        _ = self;
-        return 0; // stub
+        return self.active_subscription_count;
     }
 
     /// Stops all subscriptions (utility method)
     pub fn stopAllSubscriptions(self: *Self) void {
-        // Would stop all active subscriptions
-        _ = self;
+        self.active_subscription_count = 0;
+    }
+
+    fn decrementSubscription(self: *Self) void {
+        if (self.active_subscription_count > 0) {
+            self.active_subscription_count -= 1;
+        }
     }
 };
 
@@ -235,7 +242,13 @@ pub const TransactionSubscription = struct {
     rx_client: *NeoSwiftRx,
 
     pub fn stop(self: *TransactionSubscription) void {
+        if (!self.is_active) return;
         self.is_active = false;
+        self.rx_client.decrementSubscription();
+    }
+
+    pub fn deinit(self: *TransactionSubscription) void {
+        self.stop();
     }
 
     pub fn isActive(self: TransactionSubscription) bool {
@@ -251,7 +264,13 @@ pub const ContractEventSubscription = struct {
     rx_client: *NeoSwiftRx,
 
     pub fn stop(self: *ContractEventSubscription) void {
+        if (!self.is_active) return;
         self.is_active = false;
+        self.rx_client.decrementSubscription();
+    }
+
+    pub fn deinit(self: *ContractEventSubscription) void {
+        self.stop();
     }
 
     pub fn isActive(self: ContractEventSubscription) bool {
