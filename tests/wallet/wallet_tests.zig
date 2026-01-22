@@ -13,7 +13,7 @@ const Hash160 = @import("../../src/types/hash160.zig").Hash160;
 const errors = @import("../../src/core/errors.zig");
 const json_utils = @import("../../src/utils/json_utils.zig");
 
-/// Test creating default wallet (converted from Swift testCreateDefaultWallet)
+// /// Test creating default wallet (converted from Swift testCreateDefaultWallet)
 test "Create default wallet" {
     const allocator = testing.allocator;
     
@@ -31,7 +31,7 @@ test "Create default wallet" {
     try testing.expect(wallet.getDefaultAccount() != null);
 }
 
-/// Test creating wallet with accounts (converted from Swift testCreateWalletWithAccounts)
+// /// Test creating wallet with accounts (converted from Swift testCreateWalletWithAccounts)
 test "Create wallet with accounts" {
     const allocator = testing.allocator;
     
@@ -51,7 +51,7 @@ test "Create wallet with accounts" {
     try testing.expect(wallet.containsAccount(account2));
 }
 
-/// Test creating wallet with no accounts (converted from Swift testCreateWalletWithAccounts_noAccounts)
+// /// Test creating wallet with no accounts (converted from Swift testCreateWalletWithAccounts_noAccounts)
 test "Create wallet with no accounts should fail" {
     const allocator = testing.allocator;
     
@@ -63,7 +63,7 @@ test "Create wallet with no accounts should fail" {
     try testing.expectError(errors.NeoError.IllegalArgument, wallet.defaultAccountByHash(Hash160.ZERO));
 }
 
-/// Test checking if account is default (converted from Swift testIsDefault_account)
+// /// Test checking if account is default (converted from Swift testIsDefault_account)
 test "Check if account is default" {
     const allocator = testing.allocator;
     
@@ -80,7 +80,7 @@ test "Check if account is default" {
     try testing.expect(wallet.isDefault(other_account));
 }
 
-/// Test wallet holds account (converted from Swift testHoldsAccount)
+// /// Test wallet holds account (converted from Swift testHoldsAccount)
 test "Wallet holds account verification" {
     const allocator = testing.allocator;
     
@@ -98,7 +98,7 @@ test "Wallet holds account verification" {
     try testing.expect(!wallet.containsAccountByHash(other_account.getScriptHash()));
 }
 
-/// Test wallet account management
+// /// Test wallet account management
 test "Wallet account management" {
     const allocator = testing.allocator;
     
@@ -117,7 +117,7 @@ test "Wallet account management" {
     try testing.expect(wallet.containsAccount(new_account2));
 }
 
-/// Test wallet account retrieval
+// /// Test wallet account retrieval
 test "Wallet account retrieval" {
     const allocator = testing.allocator;
     
@@ -139,7 +139,7 @@ test "Wallet account retrieval" {
     try testing.expect(non_existent == null);
 }
 
-/// Test wallet validation
+// /// Test wallet validation
 test "Wallet validation" {
     const allocator = testing.allocator;
     
@@ -155,7 +155,7 @@ test "Wallet validation" {
     try testing.expect(valid_wallet.getDefaultAccount() != null);
 }
 
-/// Test wallet encryption and decryption
+// /// Test wallet encryption and decryption
 test "Wallet encryption and decryption" {
     const allocator = testing.allocator;
     
@@ -170,7 +170,7 @@ test "Wallet encryption and decryption" {
     try testing.expect(private_key.isValid());
 }
 
-/// Test wallet NEP-6 operations
+// /// Test wallet NEP-6 operations
 test "Wallet NEP-6 operations" {
     const allocator = testing.allocator;
     

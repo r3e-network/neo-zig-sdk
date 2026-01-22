@@ -223,7 +223,7 @@ pub const NonFungibleToken = struct {
             }
         }.map;
 
-        var iterator = try iterator_mod.Iterator([]u8).init(
+        var iterator = try iterator_mod.AnyIterator([]u8).init(
             smart_contract.allocator,
             smart_contract.neo_swift.?,
             session_id,
@@ -245,7 +245,7 @@ pub const TokenIterator = struct {
     session_id: []const u8,
     iterator_id: []const u8,
     allocator: std.mem.Allocator,
-    inner: ?iterator_mod.Iterator([]u8),
+    inner: ?iterator_mod.AnyIterator([]u8),
     buffer: ArrayList([]u8),
     exhausted: bool,
 
@@ -278,7 +278,7 @@ pub const TokenIterator = struct {
             }
         }.map;
 
-        const inner_iter = try iterator_mod.Iterator([]u8).init(
+        const inner_iter = try iterator_mod.AnyIterator([]u8).init(
             allocator,
             neo_swift,
             session_id,

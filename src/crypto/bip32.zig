@@ -97,8 +97,7 @@ pub const Bip32ECKeyPair = struct {
     }
 
     /// Generates key pair from seed (equivalent to Swift generateKeyPair(seed:))
-    pub fn generateKeyPair(seed: []const u8, allocator: std.mem.Allocator) !Self {
-        _ = allocator;
+    pub fn generateKeyPair(seed: []const u8) !Self {
         const hmac_key = "Bitcoin seed";
 
         // Generate HMAC-SHA512 of seed with "Bitcoin seed" key
@@ -299,11 +298,10 @@ fn hmacSha512(key: []const u8, message: []const u8) [64]u8 {
 // Tests (converted from Swift Bip32ECKeyPair tests)
 test "Bip32ECKeyPair creation and properties" {
     const testing = std.testing;
-    const allocator = testing.allocator;
 
     // Test key pair generation from seed (equivalent to Swift generateKeyPair tests)
     const test_seed = "test seed for BIP32 key generation";
-    const master_key = try Bip32ECKeyPair.generateKeyPair(test_seed, allocator);
+    const master_key = try Bip32ECKeyPair.generateKeyPair(test_seed);
 
     // Test master key properties (equivalent to Swift master key tests)
     try testing.expectEqual(@as(i32, 0), master_key.depth);
@@ -320,7 +318,7 @@ test "Bip32ECKeyPair child derivation" {
     const allocator = testing.allocator;
 
     const test_seed = "test seed for child derivation";
-    const master_key = try Bip32ECKeyPair.generateKeyPair(test_seed, allocator);
+    const master_key = try Bip32ECKeyPair.generateKeyPair(test_seed);
 
     // Test non-hardened child derivation (equivalent to Swift child derivation tests)
     const child_key = try master_key.deriveChild(0, false, allocator);
@@ -345,7 +343,7 @@ test "Bip32ECKeyPair derivation path" {
     const allocator = testing.allocator;
 
     const test_seed = "test seed for derivation path";
-    const master_key = try Bip32ECKeyPair.generateKeyPair(test_seed, allocator);
+    const master_key = try Bip32ECKeyPair.generateKeyPair(test_seed);
 
     // Test derivation path: m/44'/60'/0'/0/0 (equivalent to Swift path derivation tests)
     const derivation_path = [_]u32{
@@ -370,7 +368,7 @@ test "Bip32ECKeyPair extended key serialization" {
     const allocator = testing.allocator;
 
     const test_seed = "test seed for extended key serialization";
-    const master_key = try Bip32ECKeyPair.generateKeyPair(test_seed, allocator);
+    const master_key = try Bip32ECKeyPair.generateKeyPair(test_seed);
 
     // Test extended private key (equivalent to Swift extended private key tests)
     const extended_private = try master_key.getExtendedPrivateKey(allocator);

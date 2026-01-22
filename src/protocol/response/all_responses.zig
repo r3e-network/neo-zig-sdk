@@ -5,8 +5,6 @@
 
 const std = @import("std");
 
-
-
 // Export all response types for comprehensive access
 pub const ContractManifest = @import("contract_manifest.zig").ContractManifest;
 pub const ContractNef = @import("contract_nef.zig").ContractNef;
@@ -51,24 +49,24 @@ pub const ResponseRegistry = struct {
     /// Gets all available response type names
     pub fn getAllResponseTypes() []const []const u8 {
         const response_types = [_][]const u8{
-            "ContractManifest", "ContractNef", "ContractState", "ContractStorageEntry",
-            "Diagnostics", "ExpressShutdown", "InvocationResult", "NameState",
-            "NativeContractState", "NeoAccountState", "NeoAddress", "NeoApplicationLog",
-            "NeoBlock", "NeoGetMemPool", "NeoGetNep17Balances", "NeoGetNep17Transfers",
-            "NeoGetPeers", "NeoGetTokenBalances", "NeoGetVersion", "NeoListPlugins",
-            "NeoNetworkFee", "NeoSendRawTransaction", "NeoValidateAddress", "NeoWitness",
-            "Nep17Contract", "Notification", "OracleRequest", "PopulatedBlocks",
-            "RecordState", "TransactionAttribute", "TransactionSendToken",
-            "TransactionSigner", "Transaction",
+            "ContractManifest",    "ContractNef",           "ContractState",        "ContractStorageEntry",
+            "Diagnostics",         "ExpressShutdown",       "InvocationResult",     "NameState",
+            "NativeContractState", "NeoAccountState",       "NeoAddress",           "NeoApplicationLog",
+            "NeoBlock",            "NeoGetMemPool",         "NeoGetNep17Balances",  "NeoGetNep17Transfers",
+            "NeoGetPeers",         "NeoGetTokenBalances",   "NeoGetVersion",        "NeoListPlugins",
+            "NeoNetworkFee",       "NeoSendRawTransaction", "NeoValidateAddress",   "NeoWitness",
+            "Nep17Contract",       "Notification",          "OracleRequest",        "PopulatedBlocks",
+            "RecordState",         "TransactionAttribute",  "TransactionSendToken", "TransactionSigner",
+            "Transaction",
         };
         return &response_types;
     }
-    
+
     /// Gets response type count
     pub fn getResponseTypeCount() usize {
         return getAllResponseTypes().len;
     }
-    
+
     /// Validates all response types are accessible
     pub fn validateAllResponseTypes() bool {
         // Test that all response types can be accessed
@@ -82,10 +80,10 @@ pub const ResponseRegistry = struct {
         _ = NeoGetVersion;
         _ = PopulatedBlocks;
         _ = TransactionAttribute;
-        
+
         return true;
     }
-    
+
     /// Checks if response type exists by name
     pub fn hasResponseType(type_name: []const u8) bool {
         const all_types = getAllResponseTypes();
@@ -101,26 +99,26 @@ pub const ResponseRegistry = struct {
 // Comprehensive validation test
 test "All response types accessibility validation" {
     const testing = std.testing;
-    
+
     // Test that all response types are accessible
     try testing.expect(ResponseRegistry.validateAllResponseTypes());
-    
+
     // Test response type count
     const type_count = ResponseRegistry.getResponseTypeCount();
     try testing.expect(type_count >= 33);
-    
+
     // Test specific response type lookup
     try testing.expect(ResponseRegistry.hasResponseType("NeoBlock"));
     try testing.expect(ResponseRegistry.hasResponseType("Transaction"));
     try testing.expect(ResponseRegistry.hasResponseType("InvocationResult"));
     try testing.expect(!ResponseRegistry.hasResponseType("NonExistentType"));
-    
+
     // Test that key response types compile
     _ = NeoBlock;
     _ = Transaction;
     _ = InvocationResult;
     _ = ContractState;
     _ = NeoGetNep17Balances;
-    
+
     try testing.expect(true);
 }

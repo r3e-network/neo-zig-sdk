@@ -20,7 +20,7 @@ const defaultAccountVerificationScript = "0c2102163946a133e3d2e0d987fb90cb01b060
 const committeeAccountAddress = "NX8GreRFGFK5wpGMWetpX93HmtrezGogzk";
 const committeeAccountVerificationScript = "0c2102163946a133e3d2e0d987fb90cb01b060ed1780f1718e2da28edf13b965fd2b600b4156e7b327";
 
-/// Test creating generic account (converted from Swift testCreateGenericAccount)
+// /// Test creating generic account (converted from Swift testCreateGenericAccount)
 test "Create generic account" {
     const allocator = testing.allocator;
     
@@ -44,7 +44,7 @@ test "Create generic account" {
     try testing.expect(key_pair.isValid());
 }
 
-/// Test creating account from existing key pair (converted from Swift testInitAccountFromExistingKeyPair)
+// /// Test creating account from existing key pair (converted from Swift testInitAccountFromExistingKeyPair)
 test "Create account from existing key pair" {
     const allocator = testing.allocator;
     
@@ -79,7 +79,7 @@ test "Create account from existing key pair" {
     try testing.expect(verification_script_bytes.len >= 40); // Minimum size for single-sig verification script
 }
 
-/// Test creating account from verification script (converted from Swift testFromVerificationScript)
+// /// Test creating account from verification script (converted from Swift testFromVerificationScript)
 test "Create account from verification script" {
     const allocator = testing.allocator;
     
@@ -103,7 +103,7 @@ test "Create account from verification script" {
     try testing.expectEqualSlices(u8, verification_script_bytes, account_verification.*.getScript());
 }
 
-/// Test creating account from public key (converted from Swift testFromPublicKey)
+// /// Test creating account from public key (converted from Swift testFromPublicKey)
 test "Create account from public key" {
     const allocator = testing.allocator;
     
@@ -129,7 +129,7 @@ test "Create account from public key" {
     try testing.expect(!account.isMultiSig());
 }
 
-/// Test creating multi-signature account (converted from Swift testCreateMultiSigAccountFromPublicKeys)
+// /// Test creating multi-signature account (converted from Swift testCreateMultiSigAccountFromPublicKeys)
 test "Create multi-signature account from public keys" {
     const allocator = testing.allocator;
     
@@ -166,7 +166,7 @@ test "Create multi-signature account from public keys" {
     try testing.expect(multi_sig_account.getKeyPair() == null);
 }
 
-/// Test account encryption and locking
+// /// Test account encryption and locking
 test "Account encryption and locking" {
     const allocator = testing.allocator;
     
@@ -194,7 +194,7 @@ test "Account encryption and locking" {
     try testing.expect(account.getKeyPair() != null);
 }
 
-/// Test account address generation
+// /// Test account address generation
 test "Account address generation" {
     const allocator = testing.allocator;
     
@@ -230,7 +230,7 @@ test "Account address generation" {
     try testing.expect(script_hash_string.len > 0);
 }
 
-/// Test account equality and comparison
+// /// Test account equality and comparison
 test "Account equality and comparison" {
     const allocator = testing.allocator;
     
@@ -272,7 +272,7 @@ test "Account equality and comparison" {
     try testing.expect(!std.mem.eql(u8, account1_address, account3_address));
 }
 
-/// Test account validation
+// /// Test account validation
 test "Account validation" {
     const allocator = testing.allocator;
     
@@ -303,7 +303,7 @@ test "Account validation" {
     try testing.expect(key_pair_account.getVerificationScript() != null);
 }
 
-/// Test multi-signature account properties
+// /// Test multi-signature account properties
 test "Multi-signature account properties" {
     const allocator = testing.allocator;
     
@@ -350,7 +350,7 @@ test "Multi-signature account properties" {
     try testing.expectEqual(@as(u32, 3), multi_sig_account.getParticipantCount().?);
 }
 
-/// Test account signing capabilities
+// /// Test account signing capabilities
 test "Account signing capabilities" {
     const allocator = testing.allocator;
     
@@ -385,7 +385,7 @@ test "Account signing capabilities" {
     try testing.expect(!multi_sig_account.canSign()); // No direct key pair
 }
 
-/// Test account cloning and copying
+// /// Test account cloning and copying
 test "Account cloning and copying" {
     const allocator = testing.allocator;
     

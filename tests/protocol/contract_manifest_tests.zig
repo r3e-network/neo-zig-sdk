@@ -5,7 +5,6 @@
 
 const std = @import("std");
 
-
 const testing = std.testing;
 const neo = @import("neo-zig");
 const ContractManifest = neo.protocol.ContractManifest;
@@ -14,7 +13,7 @@ const ContractPermission = neo.protocol.ContractPermission;
 
 test "Contract manifest creation" {
     const allocator = testing.allocator;
-    
+
     var manifest = try ContractManifest.init(
         "TestContract",
         &[_]ContractGroup{},
@@ -27,7 +26,7 @@ test "Contract manifest creation" {
         allocator,
     );
     defer manifest.deinit(allocator);
-    
+
     try testing.expectEqualStrings("TestContract", manifest.getNameOrDefault());
     try testing.expect(manifest.hasStandard("NEP-17"));
     try testing.expect(manifest.isNep17());
@@ -35,13 +34,13 @@ test "Contract manifest creation" {
 
 test "Contract group validation" {
     const allocator = testing.allocator;
-    
+
     const valid_pub_key = "03b4af8d061b6b320cce6c63bc4ec7894dce107bfc5f5ef5c68a93b4ad1e136816";
     const valid_signature = "dGVzdF9zaWduYXR1cmU=";
-    
+
     var group = try ContractGroup.init(valid_pub_key, valid_signature, allocator);
     defer group.deinit(allocator);
-    
+
     try testing.expect(std.mem.indexOf(u8, group.pub_key, "03b4af8d") != null);
     try testing.expectEqualStrings(valid_signature, group.signature);
 }

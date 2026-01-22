@@ -9,7 +9,7 @@ const ArrayList = std.ArrayList;
 
 const neo = @import("neo-zig");
 
-/// Advanced cryptographic test suite (converted from advanced Swift crypto tests)
+// /// Advanced cryptographic test suite (converted from advanced Swift crypto tests)
 test "advanced cryptographic operations" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -64,7 +64,7 @@ test "advanced cryptographic operations" {
     std.log.info("✅ Advanced cryptographic operations validated", .{});
 }
 
-/// Advanced transaction test suite (converted from advanced Swift transaction tests)
+// /// Advanced transaction test suite (converted from advanced Swift transaction tests)
 test "advanced transaction operations" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -131,7 +131,7 @@ test "advanced transaction operations" {
     std.log.info("✅ Advanced transaction operations validated", .{});
 }
 
-/// Advanced wallet test suite (converted from advanced Swift wallet tests)
+// /// Advanced wallet test suite (converted from advanced Swift wallet tests)
 test "advanced wallet operations" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -185,7 +185,7 @@ test "advanced wallet operations" {
     std.log.info("✅ Advanced wallet operations validated", .{});
 }
 
-/// Advanced type system test suite (converted from advanced Swift type tests)
+// /// Advanced type system test suite (converted from advanced Swift type tests)
 test "advanced type system operations" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -228,7 +228,7 @@ test "advanced type system operations" {
     std.log.info("✅ Advanced type system validated", .{});
 }
 
-/// Advanced RPC test suite (converted from advanced Swift RPC tests)
+// /// Advanced RPC test suite (converted from advanced Swift RPC tests)
 test "advanced RPC response operations" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -270,7 +270,7 @@ test "advanced RPC response operations" {
     std.log.info("✅ Advanced RPC response operations validated", .{});
 }
 
-/// Complete serialization test suite (converted from all Swift serialization tests)
+// /// Complete serialization test suite (converted from all Swift serialization tests)
 test "complete serialization operations" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -304,7 +304,7 @@ test "complete serialization operations" {
     std.log.info("✅ Complete serialization operations validated", .{});
 }
 
-/// Complete utility test suite (converted from all Swift utility tests)
+// /// Complete utility test suite (converted from all Swift utility tests)
 test "complete utility operations" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -359,7 +359,7 @@ test "complete utility operations" {
     std.log.info("✅ Complete utility operations validated", .{});
 }
 
-/// Complete integration test suite (converted from all Swift integration tests)
+// /// Complete integration test suite (converted from all Swift integration tests)
 test "complete integration workflow validation" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -445,7 +445,7 @@ test "complete integration workflow validation" {
     std.log.info("✅ Complete integration workflow validated", .{});
 }
 
-/// Performance and stress test suite
+// /// Performance and stress test suite
 test "performance and stress validation" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -522,7 +522,7 @@ test "performance and stress validation" {
     std.log.info("✅ Performance and stress testing completed", .{});
 }
 
-/// Final comprehensive validation
+// /// Final comprehensive validation
 test "final comprehensive Neo SDK validation" {
     const testing = std.testing;
     const allocator = testing.allocator;

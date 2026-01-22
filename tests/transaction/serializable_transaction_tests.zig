@@ -5,14 +5,13 @@
 
 const std = @import("std");
 
-
 const testing = std.testing;
 const neo = @import("neo-zig");
 const NeoTransaction = neo.transaction.NeoTransaction;
 
 test "Transaction serialization roundtrip" {
     const allocator = testing.allocator;
-    
+
     const signers = [_]neo.transaction.Signer{
         neo.transaction.Signer.init(neo.Hash160.ZERO, neo.transaction.WitnessScope.CalledByEntry),
     };
@@ -60,7 +59,7 @@ test "Transaction serialization roundtrip with extended attributes" {
     const height_bytes = std.mem.toBytes(std.mem.nativeToLittle(u32, 42));
     const conflict_hash = try neo.Hash256.initWithString("0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
     const conflict_bytes = conflict_hash.toLittleEndianArray();
-    const notary_bytes = [_]u8{ 2 };
+    const notary_bytes = [_]u8{2};
 
     const attributes = [_]neo.transaction.TransactionAttribute{
         neo.transaction.TransactionAttribute.init(.NotValidBefore, height_bytes[0..]),

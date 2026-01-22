@@ -73,6 +73,8 @@ pub const ValidationError = error{
     InvalidBlock,
     InvalidScript,
     ValidationFailed,
+    InvalidUnicode,
+    UnicodeNormalizationFailed,
 };
 
 /// Network and RPC errors

@@ -36,7 +36,7 @@ fn createTestAccount(allocator: std.mem.Allocator) !Account {
     return try Account.init(key_pair, allocator);
 }
 
-/// Test NEO token constants (converted from Swift testConstants)
+// /// Test NEO token constants (converted from Swift testConstants)
 test "NEO token constants and properties" {
     const allocator = testing.allocator;
     
@@ -67,7 +67,7 @@ test "NEO token constants and properties" {
     try testing.expect(neo_token.isNativeContract());
 }
 
-/// Test register candidate functionality (converted from Swift testRegisterCandidate)
+// /// Test register candidate functionality (converted from Swift testRegisterCandidate)
 test "Register candidate script generation" {
     const allocator = testing.allocator;
     
@@ -103,7 +103,7 @@ test "Register candidate script generation" {
     try testing.expect(expected_script.len >= pub_key_bytes.len); // At minimum should contain pubkey
 }
 
-/// Test voting functionality
+// /// Test voting functionality
 test "Vote functionality script generation" {
     const allocator = testing.allocator;
     
@@ -145,7 +145,7 @@ test "Vote functionality script generation" {
     try testing.expect(vote_script.len > 60); // Vote with account hash + public key should be substantial
 }
 
-/// Test governance method script generation
+// /// Test governance method script generation
 test "Governance method script generation" {
     const allocator = testing.allocator;
     
@@ -178,7 +178,7 @@ test "Governance method script generation" {
     }
 }
 
-/// Test NEO token account state queries
+// /// Test NEO token account state queries
 test "NEO token account state queries" {
     const allocator = testing.allocator;
     
@@ -206,7 +206,7 @@ test "NEO token account state queries" {
     try testing.expect(state_script.len > 30); // Should contain account hash + method call
 }
 
-/// Test NEO token parameter validation
+// /// Test NEO token parameter validation
 test "NEO token parameter validation" {
     const allocator = testing.allocator;
     
@@ -243,7 +243,7 @@ test "NEO token parameter validation" {
     try testing.expect(null_param.isNull());
 }
 
-/// Test NEO token voting scenarios
+// /// Test NEO token voting scenarios
 test "NEO token voting scenarios" {
     const allocator = testing.allocator;
     
@@ -299,7 +299,7 @@ test "NEO token voting scenarios" {
     try testing.expect(unvote_script.len != vote_script.len); // Should be different scripts
 }
 
-/// Test NEO token governance operations
+// /// Test NEO token governance operations
 test "NEO token governance operations" {
     const allocator = testing.allocator;
     
@@ -347,7 +347,7 @@ test "NEO token governance operations" {
     try testing.expect(get_price_script.len > 0);
 }
 
-/// Test candidate registration and unregistration
+// /// Test candidate registration and unregistration
 test "Candidate registration and unregistration" {
     const allocator = testing.allocator;
     
@@ -396,7 +396,7 @@ test "Candidate registration and unregistration" {
     try testing.expect(length_diff < 10); // Should be very similar, just different method names
 }
 
-/// Test NEO token method name validation
+// /// Test NEO token method name validation
 test "NEO token method name validation" {
     const allocator = testing.allocator;
     
@@ -438,7 +438,7 @@ test "NEO token method name validation" {
     }
 }
 
-/// Test NEO token transaction building integration
+// /// Test NEO token transaction building integration
 test "NEO token transaction building integration" {
     const allocator = testing.allocator;
     

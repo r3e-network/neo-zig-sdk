@@ -5,14 +5,13 @@
 
 const std = @import("std");
 
-
 const testing = std.testing;
 const neo = @import("neo-zig");
 const Request = neo.rpc.Request;
 
 test "JSON-RPC request creation" {
     const allocator = testing.allocator;
-    
+
     const method = "getversion";
     const TestResponse = struct {
         result: ?u32 = null,
@@ -25,7 +24,7 @@ test "JSON-RPC request creation" {
 
     var request = try TestRequest.withNoParams(allocator, method);
     defer request.deinit();
-    
+
     try testing.expectEqualStrings("2.0", request.jsonrpc);
     try testing.expectEqualStrings(method, request.method);
     try testing.expectEqual(@as(usize, 0), request.getParams().len);
@@ -34,7 +33,7 @@ test "JSON-RPC request creation" {
 
 test "Request JSON encoding" {
     const allocator = testing.allocator;
-    
+
     const TestResponse = struct {
         result: ?u32 = null,
 
@@ -55,7 +54,7 @@ test "Request JSON encoding" {
 
     const id_fragment = try std.fmt.allocPrint(allocator, "\"id\":{d}", .{request.id});
     defer allocator.free(id_fragment);
-    
+
     try testing.expect(std.mem.indexOf(u8, json_string, "getblockcount") != null);
     try testing.expect(std.mem.indexOf(u8, json_string, "\"jsonrpc\":\"2.0\"") != null);
     try testing.expect(std.mem.indexOf(u8, json_string, "\"params\":[]") != null);

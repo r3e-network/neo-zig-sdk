@@ -141,8 +141,7 @@ pub const StringEnumUtils = struct {
 /// JSON enum conversion utilities
 pub const JsonEnumUtils = struct {
     /// Encodes enum as JSON string (equivalent to Swift JSON encoding)
-    pub fn encodeEnumAsString(comptime T: type, value: T, allocator: std.mem.Allocator) !std.json.Value {
-        _ = allocator;
+    pub fn encodeEnumAsString(comptime T: type, value: T) std.json.Value {
         const string_value = StringEnumUtils.toString(T, value);
         return std.json.Value{ .string = string_value };
     }

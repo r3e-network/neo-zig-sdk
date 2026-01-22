@@ -31,8 +31,7 @@ pub fn hash160(data: []const u8) !Hash160 {
 }
 
 /// HMAC-SHA256 implementation
-pub fn hmacSha256(key: []const u8, message: []const u8, allocator: std.mem.Allocator) !Hash256 {
-    _ = allocator;
+pub fn hmacSha256(key: []const u8, message: []const u8) Hash256 {
     var out: [32]u8 = undefined;
     std.crypto.auth.hmac.sha2.HmacSha256.create(&out, message, key);
     return Hash256{ .bytes = out };

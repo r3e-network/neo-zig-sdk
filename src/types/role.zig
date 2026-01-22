@@ -104,8 +104,7 @@ pub const Role = enum(u8) {
     }
 
     /// Combines multiple roles (bitwise OR)
-    pub fn combineRoles(roles: []const Role, allocator: std.mem.Allocator) !u8 {
-        _ = allocator;
+    pub fn combineRoles(roles: []const Role) u8 {
         var combined: u8 = 0;
         for (roles) |role| {
             combined |= role.toByte();
@@ -213,7 +212,7 @@ test "Role combination and extraction" {
 
     // Test role combination (equivalent to Swift role combination tests)
     const roles = [_]Role{ .StateValidator, .Oracle };
-    const combined = try Role.combineRoles(&roles, allocator);
+    const combined = Role.combineRoles(&roles);
     try testing.expectEqual(@as(u8, 0x04 | 0x08), combined); // 0x0C
 
     // Test role extraction

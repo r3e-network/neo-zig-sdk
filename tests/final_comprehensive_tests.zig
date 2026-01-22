@@ -9,7 +9,7 @@ const std = @import("std");
 const neo = @import("neo-zig");
 const json_utils = @import("../src/utils/json_utils.zig");
 
-/// Complete contract tests (converted from ALL contract test files)
+// /// Complete contract tests (converted from ALL contract test files)
 test "all contract functionality tests" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -82,7 +82,7 @@ test "all contract functionality tests" {
     std.log.info("✅ ALL contract functionality tests passed", .{});
 }
 
-/// Complete transaction tests (converted from ALL transaction test files)
+// /// Complete transaction tests (converted from ALL transaction test files)
 test "all transaction functionality tests" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -151,7 +151,7 @@ test "all transaction functionality tests" {
     std.log.info("✅ ALL transaction functionality tests passed", .{});
 }
 
-/// Complete wallet tests (converted from ALL wallet test files)
+// /// Complete wallet tests (converted from ALL wallet test files)
 test "all wallet functionality tests" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -224,7 +224,7 @@ test "all wallet functionality tests" {
     std.log.info("✅ ALL wallet functionality tests passed", .{});
 }
 
-/// Complete crypto tests (converted from ALL crypto test files)
+// /// Complete crypto tests (converted from ALL crypto test files)
 test "all crypto functionality tests" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -339,7 +339,7 @@ test "all crypto functionality tests" {
     std.log.info("✅ ALL crypto functionality tests passed", .{});
 }
 
-/// Complete serialization tests (converted from ALL serialization test files)
+// /// Complete serialization tests (converted from ALL serialization test files)
 test "all serialization functionality tests" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -400,7 +400,7 @@ test "all serialization functionality tests" {
     std.log.info("✅ ALL serialization functionality tests passed", .{});
 }
 
-/// Complete RPC tests (converted from ALL RPC test files)
+// /// Complete RPC tests (converted from ALL RPC test files)
 test "all RPC functionality tests" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -465,7 +465,7 @@ test "all RPC functionality tests" {
     std.log.info("✅ ALL RPC functionality tests passed", .{});
 }
 
-/// Complete protocol tests (converted from ALL protocol test files)
+// /// Complete protocol tests (converted from ALL protocol test files)
 test "all protocol functionality tests" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -525,7 +525,7 @@ test "all protocol functionality tests" {
     std.log.info("✅ ALL protocol functionality tests passed", .{});
 }
 
-/// Complete utility tests (converted from ALL utility test files)
+// /// Complete utility tests (converted from ALL utility test files)
 test "all utility functionality tests" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -618,7 +618,7 @@ test "all utility functionality tests" {
     std.log.info("✅ ALL utility functionality tests passed", .{});
 }
 
-/// Final comprehensive integration test
+// /// Final comprehensive integration test
 test "final absolute comprehensive validation" {
     const testing = std.testing;
     const allocator = testing.allocator;

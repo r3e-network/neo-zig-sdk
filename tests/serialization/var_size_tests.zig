@@ -5,7 +5,6 @@
 
 const std = @import("std");
 
-
 const testing = std.testing;
 
 test "Variable size encoding" {

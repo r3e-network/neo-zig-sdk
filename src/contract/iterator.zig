@@ -12,10 +12,10 @@ const NeoSwift = @import("../rpc/neo_client.zig").NeoSwift;
 const NeoProtocol = @import("../protocol/neo_protocol.zig").NeoProtocol;
 
 /// Generic iterator for stack items (converted from Swift Iterator<T>)
-pub fn Iterator(comptime T: type) type {
+pub fn Iterator(comptime T: type, comptime Context: type) type {
     return struct {
-        /// Neo client instance
-        neo_swift: *anyopaque, // NeoSwift reference
+        /// Context reference (NeoSwift or similar)
+        context: Context,
         /// Session ID for iterator
         session_id: []const u8,
         /// Iterator ID for traversal
@@ -44,13 +44,13 @@ pub fn Iterator(comptime T: type) type {
         /// Creates iterator (equivalent to Swift init)
         pub fn init(
             allocator: std.mem.Allocator,
-            neo_swift: *anyopaque,
+            context: Context,
             session_id: []const u8,
             iterator_id: []const u8,
             mapper: *const fn (StackItem, std.mem.Allocator) anyerror!T,
         ) !Self {
             return Self{
-                .neo_swift = neo_swift,
+                .context = context,
                 .session_id = try allocator.dupe(u8, session_id),
                 .iterator_id = try allocator.dupe(u8, iterator_id),
                 .mapper = mapper,
@@ -73,7 +73,7 @@ pub fn Iterator(comptime T: type) type {
         }
 
         fn traverseRpc(self: *Self, count: u32) ![]T {
-            const neo_swift: *NeoSwift = @ptrCast(@alignCast(self.neo_swift));
+            const neo_swift: *NeoSwift = @ptrCast(@alignCast(@constCast(&self.context)));
             var protocol = NeoProtocol.init(neo_swift.getService());
             const service_allocator = protocol.service.getAllocator();
 
@@ -151,7 +151,7 @@ pub fn Iterator(comptime T: type) type {
 
         /// Terminates session (equivalent to Swift terminateSession())
         pub fn terminateSession(self: Self) !void {
-            const neo_swift: *NeoSwift = @ptrCast(@alignCast(self.neo_swift));
+            const neo_swift: *NeoSwift = @ptrCast(@alignCast(@constCast(&self.context)));
             var protocol = NeoProtocol.init(neo_swift.getService());
             var request = try protocol.terminateSession(self.session_id);
             const response = try request.sendUsing(protocol.service);
@@ -176,7 +176,7 @@ pub fn Iterator(comptime T: type) type {
             }
             defer all_items.deinit();
 
-            const batch_size = @min(100, max_items); // Reasonable batch size
+            const batch_size = @min(100, max_items);
             var total_retrieved: u32 = 0;
 
             while (total_retrieved < max_items) {
@@ -192,13 +192,13 @@ pub fn Iterator(comptime T: type) type {
                 };
                 defer self.allocator.free(batch_items);
 
-                if (batch_items.len == 0) break; // No more items
+                if (batch_items.len == 0) break;
 
                 try all_items.appendSlice(batch_items);
                 cleanup_batch = false;
                 total_retrieved += @intCast(batch_items.len);
 
-                if (batch_items.len < this_batch) break; // Fewer items than requested
+                if (batch_items.len < this_batch) break;
             }
 
             return try all_items.toOwnedSlice();
@@ -237,6 +237,11 @@ pub fn Iterator(comptime T: type) type {
     };
 }
 
+/// Backward-compatible iterator type using anyopaque context
+pub fn AnyIterator(comptime T: type) type {
+    return Iterator(T, *anyopaque);
+}
+
 /// Session information structure
 pub const SessionInfo = struct {
     session_id: []const u8,
@@ -252,19 +257,19 @@ pub const SessionInfo = struct {
 /// Common iterator types
 pub const CommonIterators = struct {
     /// String iterator (most common)
-    pub const StringIterator = Iterator([]const u8);
+    pub const StringIterator = Iterator([]const u8, *NeoSwift);
 
     /// Integer iterator
-    pub const IntegerIterator = Iterator(i64);
+    pub const IntegerIterator = Iterator(i64, *NeoSwift);
 
     /// Hash160 iterator
-    pub const Hash160Iterator = Iterator(@import("../types/hash160.zig").Hash160);
+    pub const Hash160Iterator = Iterator(@import("../types/hash160.zig").Hash160, *NeoSwift);
 
     /// Contract parameter iterator
-    pub const ContractParameterIterator = Iterator(@import("../types/contract_parameter.zig").ContractParameter);
+    pub const ContractParameterIterator = Iterator(@import("../types/contract_parameter.zig").ContractParameter, *NeoSwift);
 
     /// Stack item iterator (raw)
-    pub const StackItemIterator = Iterator(StackItem);
+    pub const StackItemIterator = Iterator(StackItem, *NeoSwift);
 };
 
 /// Iterator factory
@@ -272,7 +277,7 @@ pub const IteratorFactory = struct {
     /// Creates string iterator with default mapper
     pub fn createStringIterator(
         allocator: std.mem.Allocator,
-        neo_swift: *anyopaque,
+        context: *NeoSwift,
         session_id: []const u8,
         iterator_id: []const u8,
     ) !CommonIterators.StringIterator {
@@ -284,7 +289,7 @@ pub const IteratorFactory = struct {
 
         return try CommonIterators.StringIterator.init(
             allocator,
-            neo_swift,
+            context,
             session_id,
             iterator_id,
             string_mapper,
@@ -294,7 +299,7 @@ pub const IteratorFactory = struct {
     /// Creates integer iterator with default mapper
     pub fn createIntegerIterator(
         allocator: std.mem.Allocator,
-        neo_swift: *anyopaque,
+        context: *NeoSwift,
         session_id: []const u8,
         iterator_id: []const u8,
     ) !CommonIterators.IntegerIterator {
@@ -307,7 +312,7 @@ pub const IteratorFactory = struct {
 
         return try CommonIterators.IntegerIterator.init(
             allocator,
-            neo_swift,
+            context,
             session_id,
             iterator_id,
             integer_mapper,
@@ -317,7 +322,7 @@ pub const IteratorFactory = struct {
     /// Creates Hash160 iterator with default mapper
     pub fn createHash160Iterator(
         allocator: std.mem.Allocator,
-        neo_swift: *anyopaque,
+        context: *NeoSwift,
         session_id: []const u8,
         iterator_id: []const u8,
     ) !CommonIterators.Hash160Iterator {
@@ -338,7 +343,7 @@ pub const IteratorFactory = struct {
 
         return try CommonIterators.Hash160Iterator.init(
             allocator,
-            neo_swift,
+            context,
             session_id,
             iterator_id,
             hash160_mapper,
@@ -364,7 +369,7 @@ pub const IteratorUtils = struct {
             return errors.ValidationError.RequiredParameterMissing;
         }
 
-        if (count == 0 or count > 1000) { // Reasonable limits
+        if (count == 0 or count > 1000) {
             return errors.ValidationError.ParameterOutOfRange;
         }
     }
@@ -436,18 +441,16 @@ pub const IteratorConfig = struct {
     }
 };
 
-// Tests (converted from Swift Iterator tests)
 test "Iterator creation and basic operations" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    var neo_swift_dummy: u8 = 0;
-    const neo_swift_stub: *anyopaque = @ptrCast(&neo_swift_dummy);
+    var neo_swift_dummy align(8) = @as(u64, 0);
+    const neo_swift_stub: *NeoSwift = @ptrCast(&neo_swift_dummy);
 
-    // Test string iterator creation
     var string_iterator = try IteratorFactory.createStringIterator(
         allocator,
-        neo_swift_stub, // neo_swift stub
+        neo_swift_stub,
         "test_session_123",
         "test_iterator_456",
     );
@@ -457,7 +460,6 @@ test "Iterator creation and basic operations" {
     try testing.expectEqualStrings("test_session_123", session_info.session_id);
     try testing.expectEqualStrings("test_iterator_456", session_info.iterator_id);
 
-    // Test session info formatting
     const formatted_info = try session_info.format(allocator);
     defer allocator.free(formatted_info);
 
@@ -468,10 +470,8 @@ test "Iterator creation and basic operations" {
 test "Iterator parameter validation" {
     const testing = std.testing;
 
-    // Test parameter validation
     try IteratorUtils.validateIteratorParams("valid_session", "valid_iterator", 50);
 
-    // Test invalid parameters
     try testing.expectError(errors.ValidationError.RequiredParameterMissing, IteratorUtils.validateIteratorParams("", "valid_iterator", 50));
 
     try testing.expectError(errors.ValidationError.RequiredParameterMissing, IteratorUtils.validateIteratorParams("valid_session", "", 50));
@@ -484,7 +484,6 @@ test "Iterator parameter validation" {
 test "Iterator configuration and utilities" {
     const testing = std.testing;
 
-    // Test iterator configuration
     const default_config = IteratorConfig.default();
     try testing.expectEqual(IteratorUtils.DEFAULT_MAX_ITEMS_PER_BATCH, default_config.max_items_per_batch);
     try testing.expectEqual(IteratorUtils.DEFAULT_MAX_TOTAL_ITEMS, default_config.max_total_items);
@@ -499,12 +498,10 @@ test "Iterator configuration and utilities" {
     try testing.expectEqual(@as(u32, 10000), aggressive_config.max_total_items);
     try testing.expect(!aggressive_config.auto_terminate);
 
-    // Test configuration validation
     try IteratorUtils.validateIteratorConfig(default_config);
     try IteratorUtils.validateIteratorConfig(conservative_config);
     try IteratorUtils.validateIteratorConfig(aggressive_config);
 
-    // Test optimal batch size calculation
     const optimal_batch = IteratorUtils.calculateOptimalBatchSize(1000, 10);
     try testing.expectEqual(@as(u32, 100), optimal_batch);
 
@@ -516,10 +513,9 @@ test "Common iterator types" {
     const testing = std.testing;
     const allocator = testing.allocator;
 
-    var neo_swift_dummy: u8 = 0;
-    const neo_swift_stub: *anyopaque = @ptrCast(&neo_swift_dummy);
+    var neo_swift_dummy align(8) = @as(u64, 0);
+    const neo_swift_stub: *NeoSwift = @ptrCast(&neo_swift_dummy);
 
-    // Test integer iterator creation
     var integer_iterator = try IteratorFactory.createIntegerIterator(
         allocator,
         neo_swift_stub,
@@ -531,7 +527,6 @@ test "Common iterator types" {
     const int_session_info = integer_iterator.getSessionInfo();
     try testing.expectEqualStrings("int_session", int_session_info.session_id);
 
-    // Test Hash160 iterator creation
     var hash160_iterator = try IteratorFactory.createHash160Iterator(
         allocator,
         neo_swift_stub,

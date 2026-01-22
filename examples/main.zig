@@ -1,6 +1,7 @@
 //! Neo Zig SDK Examples
 //!
-//! Small, self-contained examples that compile and run offline.
+//! Comprehensive, self-contained examples demonstrating key SDK features.
+//! Each example is compilable and can be run independently.
 
 const std = @import("std");
 const neo = @import("neo-zig");
@@ -14,8 +15,13 @@ pub fn main() !void {
     try demonstrateHashes(allocator);
     try demonstrateKeysAndAddresses(allocator);
     try demonstrateWifRoundtrip(allocator);
+    try demonstrateAddressValidation(allocator);
+    try demonstrateTransactionBuilding(allocator);
+    try demonstrateWalletOperations(allocator);
+    try demonstrateContractParameters(allocator);
+    try demonstrateRpcRequests(allocator);
 
-    std.log.info("All examples completed successfully.", .{});
+    std.log.info("\nAll examples completed successfully.", .{});
 }
 
 fn ensure(ok: bool) !void {
@@ -23,6 +29,8 @@ fn ensure(ok: bool) !void {
 }
 
 fn demonstrateHashes(allocator: std.mem.Allocator) !void {
+    std.log.info("\n--- Hash Operations ---", .{});
+
     const message = "Neo Zig SDK hash example";
 
     const sha = neo.Hash256.sha256(message);
@@ -39,9 +47,16 @@ fn demonstrateHashes(allocator: std.mem.Allocator) !void {
     const hash160_hex = try hash160.string(allocator);
     defer allocator.free(hash160_hex);
     std.log.info("Hash160 = {s}...", .{hash160_hex[0..16]});
+
+    const ripemd = try neo.crypto.ripemd160Hash(message);
+    const ripemd_hex = try ripemd.string(allocator);
+    defer allocator.free(ripemd_hex);
+    std.log.info("RIPEMD160 = {s}...", .{ripemd_hex[0..16]});
 }
 
 fn demonstrateKeysAndAddresses(allocator: std.mem.Allocator) !void {
+    std.log.info("\n--- Key Generation & Address Creation ---", .{});
+
     const key_pair = try neo.crypto.generateKeyPair(true);
     defer {
         var mutable = key_pair;
@@ -55,23 +70,170 @@ fn demonstrateKeysAndAddresses(allocator: std.mem.Allocator) !void {
 
     const parsed = try neo.Address.fromString(address_str, allocator);
     try ensure(parsed.eql(address));
+
+    const script_hash = address.toHash160();
+    const hash_hex = try script_hash.toHex(allocator);
+    defer allocator.free(hash_hex);
+    std.log.info("Script hash: {s}", .{hash_hex});
+
+    if (address.isValid()) {
+        std.log.info("Address is valid", .{});
+    }
+    if (address.isStandard()) {
+        std.log.info("Address is standard (single signature)", .{});
+    }
 }
 
 fn demonstrateWifRoundtrip(allocator: std.mem.Allocator) !void {
+    std.log.info("\n--- WIF Key Format ---", .{});
+
     const key_pair = try neo.crypto.generateKeyPair(true);
     defer {
         var mutable = key_pair;
         mutable.zeroize();
     }
 
-    const wif = try neo.crypto.encodeWIF(key_pair.private_key, true, .mainnet, allocator);
-    defer allocator.free(wif);
-    const shown = @min(@as(usize, 10), wif.len);
-    std.log.info("WIF: {s}... (len {}, redacted)", .{ wif[0..shown], wif.len });
+    const wif_mainnet = try neo.crypto.encodeWIF(key_pair.private_key, true, .mainnet, allocator);
+    defer allocator.free(wif_mainnet);
+    std.log.info("Mainnet WIF: {s}...", .{wif_mainnet[0..10]});
 
-    var decoded = try neo.crypto.decodeWIF(wif, allocator);
+    const wif_testnet = try neo.crypto.encodeWIF(key_pair.private_key, true, .testnet, allocator);
+    defer allocator.free(wif_testnet);
+    std.log.info("Testnet WIF: {s}...", .{wif_testnet[0..10]});
+
+    var decoded = try neo.crypto.decodeWIF(wif_mainnet, allocator);
     defer decoded.deinit();
 
     try ensure(decoded.private_key.eql(key_pair.private_key));
     try ensure(decoded.compressed);
+    try ensure(decoded.network == .mainnet);
+    std.log.info("WIF round-trip successful", .{});
+}
+
+fn demonstrateAddressValidation(allocator: std.mem.Allocator) !void {
+    std.log.info("\n--- Address Validation ---", .{});
+
+    const test_address = "Nj6QRk4G1UcCqSF9QWxxwwfzgfttFsqvGh";
+    const address = try neo.Address.fromString(test_address, allocator);
+
+    if (address.isValid()) {
+        std.log.info("Address '{s}' is valid", .{test_address});
+    }
+
+    if (address.isStandard()) {
+        std.log.info("Address is standard single-signature", .{});
+    }
+
+    const script_hash = address.toHash160();
+    const hash_hex = try script_hash.toHex(allocator);
+    defer allocator.free(hash_hex);
+    std.log.info("Script hash: {s}", .{hash_hex});
+
+    const reconstructed = neo.Address.fromHash160(script_hash);
+    try ensure(address.eql(reconstructed));
+    std.log.info("Address round-trip from hash successful", .{});
+}
+
+fn demonstrateTransactionBuilding(allocator: std.mem.Allocator) !void {
+    std.log.info("\n--- Transaction Building ---", .{});
+
+    var builder = neo.transaction.TransactionBuilder.init(allocator);
+    defer builder.deinit();
+
+    _ = builder.version(0)
+        .additionalNetworkFee(500000)
+        .additionalSystemFee(1000000);
+
+    const signer = neo.transaction.Signer.init(neo.Hash160.ZERO, neo.transaction.WitnessScope.CalledByEntry);
+    _ = try builder.signer(signer);
+
+    _ = try builder.transferToken(
+        neo.transaction.TransactionBuilder.GAS_TOKEN_HASH,
+        neo.Hash160.ZERO,
+        neo.Hash160.ZERO,
+        100000000,
+    );
+
+    var transaction = try builder.build();
+    defer transaction.deinit(allocator);
+
+    try transaction.validate();
+    std.log.info("Transaction built and validated successfully", .{});
+
+    const tx_hash = try transaction.getHash(allocator);
+    const hash_hex = try tx_hash.string(allocator);
+    defer allocator.free(hash_hex);
+    std.log.info("Transaction hash: {s}...", .{hash_hex[0..16]});
+}
+
+fn demonstrateWalletOperations(allocator: std.mem.Allocator) !void {
+    std.log.info("\n--- Wallet Operations ---", .{});
+
+    var wallet = neo.wallet.Wallet.init(allocator);
+    defer wallet.deinit();
+
+    _ = wallet.name("Example Wallet").version("3.0");
+    std.log.info("Created wallet: {s} v{s}", .{ wallet.getName(), wallet.getVersion() });
+
+    const account = try wallet.createAccount("Primary Account");
+    std.log.info("Created account: {s}", .{account.getLabel().?});
+
+    if (wallet.isDefault(account)) {
+        std.log.info("Account is default", .{});
+    }
+
+    std.log.info("Wallet has {} accounts", .{wallet.getAccountCount()});
+
+    const account_address = account.getAddress();
+    const address_str = try account_address.toString(allocator);
+    defer allocator.free(address_str);
+    std.log.info("Account address: {s}", .{address_str});
+}
+
+fn demonstrateContractParameters(_: std.mem.Allocator) !void {
+    std.log.info("\n--- Contract Parameters ---", .{});
+
+    const param_string = neo.ContractParameter.string("hello");
+    std.log.info("String parameter: {s}", .{param_string.String});
+
+    const param_integer = neo.ContractParameter.integer(42);
+    std.log.info("Integer parameter: {}", .{param_integer.Integer});
+
+    const param_bool = neo.ContractParameter.boolean(true);
+    std.log.info("Boolean parameter: {}", .{param_bool.Boolean});
+
+    const param_hash160 = neo.ContractParameter.hash160(neo.Hash160.ZERO);
+    _ = param_hash160;
+    std.log.info("Hash160 parameter created", .{});
+
+    const param_array = neo.ContractParameter.array(&[_]neo.ContractParameter{
+        neo.ContractParameter.string("item1"),
+        neo.ContractParameter.integer(123),
+    });
+    std.log.info("Array parameter with {} items", .{param_array.Array.len});
+}
+
+fn demonstrateRpcRequests(_: std.mem.Allocator) !void {
+    std.log.info("\n--- RPC Client Requests ---", .{});
+
+    const config = neo.rpc.NeoSwiftConfig.init();
+    var service = neo.rpc.NeoSwiftService.init("http://localhost:20332");
+    var client = neo.rpc.NeoSwift.build(std.heap.page_allocator, &service, config);
+    defer client.deinit();
+
+    std.log.info("RPC client created", .{});
+
+    const best_block_request = try client.getBestBlockHash();
+    std.log.info("Request: {s}", .{best_block_request.method});
+
+    const block_count_request = try client.getBlockCount();
+    std.log.info("Request: {s}", .{block_count_request.method});
+
+    const version_request = try client.getVersion();
+    std.log.info("Request: {s}", .{version_request.method});
+
+    const connection_request = try client.getConnectionCount();
+    std.log.info("Request: {s}", .{connection_request.method});
+
+    std.log.info("All RPC requests created successfully", .{});
 }

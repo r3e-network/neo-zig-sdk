@@ -27,11 +27,24 @@ A Neo N3 blockchain SDK implemented in Zig, focused on explicit memory managemen
 - **Networking**: RPC transport uses `std.http.Client`; timeouts are best-effort (no socket deadlines in stdlib)
 - **Contracts**: Some high-level helpers return stub values when no RPC client is attached; attach `neo.rpc.NeoSwift` for live calls
 
-## 📖 Docs
+## 📖 Documentation
 
-- `docs/SWIFT_MIGRATION.md`
-- `docs/USAGE.md`
-- `docs/ARCHITECTURE.md`
+The SDK includes comprehensive documentation covering all aspects of development:
+
+### Getting Started
+- **[Quick Start](#-quick-start)** - Get up and running in 5 minutes
+- **[Installation](#installation)** - Add to your project
+- **[Usage Guide](docs/USAGE.md)** - Comprehensive usage patterns with examples
+
+### Core Concepts
+- **[Architecture](docs/ARCHITECTURE.md)** - Module organization and design patterns
+- **[API Reference](docs/API.md)** - Complete API documentation
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+### Migration & Contributing
+- **[Swift Migration](docs/SWIFT_MIGRATION.md)** - Transition from NeoSwift SDK
+- **[Contributing](CONTRIBUTING.md)** - Development guidelines
+- **[Security](SECURITY.md)** - Security best practices
 
 ## 🆕 v1.0.1 Release
 
@@ -159,13 +172,64 @@ src/
 
 ### Installation
 
-Add to your `build.zig`:
+Add to your `build.zig.zon`:
+
+```bash
+zig fetch --save https://github.com/r3e-network/neo-zig-sdk/archive/refs/tags/v1.0.1.tar.gz
+```
+
+Then add to your `build.zig`:
 
 ```zig
 const neo_zig = b.dependency("neo_zig", .{});
 // Module names exported by this package: "neo-zig" and "neo_zig" (alias).
 exe.root_module.addImport("neo-zig", neo_zig.module("neo-zig"));
 ```
+
+### Your First Transaction
+
+```zig
+const std = @import("std");
+const neo = @import("neo-zig");
+
+pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+    neo.utils.initGlobalLogger(.Info);
+
+    // 1. Generate a key pair
+    const key_pair = try neo.crypto.generateKeyPair(true);
+    defer {
+        var kp = key_pair;
+        kp.zeroize();
+    }
+
+    // 2. Create address
+    const address = try key_pair.public_key.toAddress(
+        neo.constants.AddressConstants.ADDRESS_VERSION,
+    );
+    const address_str = try address.toString(allocator);
+    defer allocator.free(address_str);
+    std.log.info("Your address: {s}", .{address_str});
+
+    // 3. Connect to RPC
+    var service = neo.rpc.NeoSwiftService.init("https://testnet1.neo.coz.io:443");
+    var client = neo.rpc.NeoSwift.build(allocator, &service, .{});
+    defer client.deinit();
+
+    // 4. Query blockchain
+    const block_count = try client.getBlockCount().send();
+    std.log.info("Current block: {}", .{block_count});
+}
+```
+
+### Complete Workflow Example
+
+See [`examples/complete_demo.zig`](examples/complete_demo.zig) for a full example covering:
+
+- Key generation and address creation
+- Transaction building and signing
+- Wallet management
+- RPC client usage
 
 ### Basic Usage
 
@@ -248,8 +312,10 @@ defer bip39_account.deinit();
 const mnemonic = bip39_account.getMnemonic();
 std.log.info("Mnemonic words: {}", .{std.mem.count(u8, mnemonic, " ") + 1});
 
-// Note: For now, BIP-39 seed derivation supports ASCII mnemonics/passphrases only.
-// Non-ASCII requires Unicode NFKD normalization (not yet implemented in this SDK).
+// BIP-39 fully supports Unicode mnemonics and passphrases with NFKD normalization.
+// Both the mnemonic and passphrase are normalized using NFKD (Normalization Form
+// Compatibility Decomposition) as required by the BIP-39 specification.
+// Supported Unicode scripts include Latin (é, ü, ñ, etc.), Greek (α, β, γ), CJK (中文, 日本語), and more.
 
 // Create NEP-6 wallet
 var nep6_wallet = neo.wallet.CompleteNEP6Wallet.init(allocator, "My Neo Wallet");
@@ -274,10 +340,10 @@ zig build
 # Run all tests
 zig build test
 
-# Run examples
+# Run examples (includes complete_demo)
 zig build examples
 
-# Generate documentation
+# Generate HTML documentation
 zig build docs
 
 # Run benchmarks
@@ -333,11 +399,28 @@ const response = try request.send();
 
 ## 📚 Documentation
 
-- **API Documentation**: run `zig build docs` and open `zig-out/docs/index.html`
-- [**Examples**](examples/) - Working code examples
-- [**Swift Migration Guide**](docs/SWIFT_MIGRATION.md) - Transition from Swift SDK
-- [**Security Guide**](SECURITY.md) - Security best practices
-- [**Contributing**](CONTRIBUTING.md) - Development guidelines
+### Generated Documentation
+
+```bash
+zig build docs
+# Open zig-out/docs/index.html in your browser
+```
+
+### Guides
+
+| Guide | Description |
+|-------|-------------|
+| [Usage Guide](docs/USAGE.md) | Comprehensive practical patterns |
+| [API Reference](docs/API.md) | Complete API documentation |
+| [Architecture](docs/ARCHITECTURE.md) | Module organization and design |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues and solutions |
+| [Swift Migration](docs/SWIFT_MIGRATION.md) | Transition from Swift SDK |
+| [Examples](examples/) | Working code examples |
+
+### Security & Contributing
+
+- **[Security](SECURITY.md)** - Security best practices
+- **[Contributing](CONTRIBUTING.md)** - Development guidelines
 
 ## 🤝 Contributing
 

@@ -30,6 +30,6 @@ test "Witness rule evaluation" {
 
     const context = WitnessContext.init();
     const result = allow_rule.evaluate(context);
-    
+
     try testing.expect(result); // Allow + true condition = true
 }

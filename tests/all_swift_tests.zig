@@ -372,7 +372,7 @@ test "complete crypto system tests" {
 
     // Test BIP32 operations (converted from Bip32ECKeyPairTests.swift)
     const bip32_seed = "test seed for BIP32 operations";
-    const master_key = try neo.crypto.bip32.Bip32ECKeyPair.generateKeyPair(bip32_seed, allocator);
+    const master_key = try neo.crypto.bip32.Bip32ECKeyPair.generateKeyPair(bip32_seed);
 
     try testing.expectEqual(@as(i32, 0), master_key.depth);
     try testing.expect(master_key.key_pair.isValid());

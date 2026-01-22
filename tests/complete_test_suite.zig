@@ -499,7 +499,7 @@ test "complete performance and integration validation" {
     std.log.info("✅ Complete integration workflow successful", .{});
 }
 
-/// Memory safety and security validation
+// /// Memory safety and security validation
 test "complete security and safety validation" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -543,7 +543,7 @@ test "complete security and safety validation" {
     std.log.info("✅ All security and safety tests passed", .{});
 }
 
-/// Complete API compatibility validation
+// /// Complete API compatibility validation
 test "complete Swift API compatibility validation" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -602,7 +602,7 @@ test "complete Swift API compatibility validation" {
     std.log.info("✅ All Swift API compatibility validated", .{});
 }
 
-/// Final comprehensive validation
+// /// Final comprehensive validation
 test "final comprehensive SDK validation" {
     const testing = std.testing;
     const allocator = testing.allocator;

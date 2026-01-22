@@ -36,7 +36,7 @@ fn createTestHashes() ![2]Hash160 {
     };
 }
 
-/// Test smart contract construction (converted from Swift testConstructSmartContract)
+// /// Test smart contract construction (converted from Swift testConstructSmartContract)
 test "Smart contract construction" {
     const allocator = testing.allocator;
     
@@ -62,7 +62,7 @@ test "Smart contract construction" {
     try some_contract.validate();
 }
 
-/// Test contract manifest retrieval (converted from Swift testGetManifest)
+// /// Test contract manifest retrieval (converted from Swift testGetManifest)
 test "Contract manifest retrieval" {
     const allocator = testing.allocator;
     
@@ -82,7 +82,7 @@ test "Contract manifest retrieval" {
     // Full manifest parsing would require RPC fixtures; this asserts manifest request wiring.
 }
 
-/// Test contract name retrieval (converted from Swift testGetName)
+// /// Test contract name retrieval (converted from Swift testGetName)
 test "Contract name retrieval" {
     const allocator = testing.allocator;
     
@@ -102,7 +102,7 @@ test "Contract name retrieval" {
     // This test validates the contract name request capability
 }
 
-/// Test function invocation with empty string (converted from Swift testInvokeWithEmptytring)
+// /// Test function invocation with empty string (converted from Swift testInvokeWithEmptytring)
 test "Function invocation with empty string validation" {
     const allocator = testing.allocator;
     
@@ -129,7 +129,7 @@ test "Function invocation with empty string validation" {
     try neo_contract.validateInvocation(valid_function_name, &empty_params);
 }
 
-/// Test invoke function script building (converted from Swift testBuildInvokeFunctionScript)
+// /// Test invoke function script building (converted from Swift testBuildInvokeFunctionScript)
 test "Build invoke function script" {
     const allocator = testing.allocator;
     
@@ -189,7 +189,7 @@ test "Build invoke function script" {
     try testing.expect(expected_script.len > 50); // Should be substantial for transfer with 3 parameters
 }
 
-/// Test NEP-17 contract method calls
+// /// Test NEP-17 contract method calls
 test "NEP-17 contract method calls" {
     const allocator = testing.allocator;
     
@@ -228,7 +228,7 @@ test "NEP-17 contract method calls" {
     }
 }
 
-/// Test contract parameter creation and validation
+// /// Test contract parameter creation and validation
 test "Contract parameter creation and validation" {
     const allocator = testing.allocator;
     
@@ -264,7 +264,7 @@ test "Contract parameter creation and validation" {
     try testing.expect(boolean_param.isBoolean());
 }
 
-/// Test contract method validation
+// /// Test contract method validation
 test "Contract method validation" {
     const allocator = testing.allocator;
     
@@ -296,7 +296,7 @@ test "Contract method validation" {
     }
 }
 
-/// Test contract script hash validation
+// /// Test contract script hash validation
 test "Contract script hash validation" {
     const allocator = testing.allocator;
     
@@ -319,7 +319,7 @@ test "Contract script hash validation" {
     }
 }
 
-/// Test contract equality and hashing
+// /// Test contract equality and hashing
 test "Contract equality and hashing" {
     const allocator = testing.allocator;
     
@@ -347,7 +347,7 @@ test "Contract equality and hashing" {
     try testing.expectNotEqual(hash1a, hash2); // Different contracts should have different hash
 }
 
-/// Test contract invocation script generation
+// /// Test contract invocation script generation
 test "Contract invocation script generation" {
     const allocator = testing.allocator;
     
@@ -404,7 +404,7 @@ test "Contract invocation script generation" {
     try testing.expect(expected_script.len > 60); // Transfer with 3 Hash160/Integer params should be substantial
 }
 
-/// Test contract state and properties
+// /// Test contract state and properties
 test "Contract state and properties" {
     const allocator = testing.allocator;
     
@@ -428,7 +428,7 @@ test "Contract state and properties" {
     try testing.expect(!neo_contract.getScriptHash().eql(gas_contract.getScriptHash()));
 }
 
-/// Test contract parameter type validation
+// /// Test contract parameter type validation
 test "Contract parameter type validation" {
     const allocator = testing.allocator;
     

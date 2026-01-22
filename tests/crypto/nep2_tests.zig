@@ -16,7 +16,7 @@ const defaultAccountPassword = "Pwd12345678";
 const defaultAccountPrivateKey = "e6e919577dd7b8e97805151c05ae07ff4f752654d6d8797597aca989c02c4cb3";
 const defaultAccountEncryptedPrivateKey = "6PYVPVe1fQznphjbUxXP9KZJqPMVnVwCx5s5pr5axRJ8uHkMtZg97eT2kA";
 
-/// Test NEP-2 decryption with default scrypt parameters (converted from Swift testDecryptWithDefaultScryptParams)
+// /// Test NEP-2 decryption with default scrypt parameters (converted from Swift testDecryptWithDefaultScryptParams)
 test "NEP-2 decrypt with default scrypt parameters" {
     const allocator = testing.allocator;
     
@@ -38,7 +38,7 @@ test "NEP-2 decrypt with default scrypt parameters" {
     try testing.expectEqualSlices(u8, expected_private_key, decrypted_private_key);
 }
 
-/// Test NEP-2 decryption with custom scrypt parameters (converted from Swift testDecryptWithNonDefaultScryptParams)
+// /// Test NEP-2 decryption with custom scrypt parameters (converted from Swift testDecryptWithNonDefaultScryptParams)
 test "NEP-2 decrypt with non-default scrypt parameters" {
     const allocator = testing.allocator;
     
@@ -64,7 +64,7 @@ test "NEP-2 decrypt with non-default scrypt parameters" {
     try testing.expectEqualSlices(u8, expected_private_key, decrypted_private_key);
 }
 
-/// Test NEP-2 encryption with default scrypt parameters (converted from Swift testEncryptWithDefaultScryptParams)
+// /// Test NEP-2 encryption with default scrypt parameters (converted from Swift testEncryptWithDefaultScryptParams)
 test "NEP-2 encrypt with default scrypt parameters" {
     const allocator = testing.allocator;
     
@@ -91,7 +91,7 @@ test "NEP-2 encrypt with default scrypt parameters" {
     try testing.expectEqualStrings(defaultAccountEncryptedPrivateKey, encrypted_result);
 }
 
-/// Test NEP-2 encryption with custom scrypt parameters (converted from Swift testEncryptWithNonDefaultScryptParams)
+// /// Test NEP-2 encryption with custom scrypt parameters (converted from Swift testEncryptWithNonDefaultScryptParams)
 test "NEP-2 encrypt with non-default scrypt parameters" {
     const allocator = testing.allocator;
     
@@ -122,7 +122,7 @@ test "NEP-2 encrypt with non-default scrypt parameters" {
     try testing.expectEqualStrings(expected_encrypted, encrypted_result);
 }
 
-/// Test NEP-2 roundtrip encryption/decryption
+// /// Test NEP-2 roundtrip encryption/decryption
 test "NEP-2 roundtrip encryption and decryption" {
     const allocator = testing.allocator;
     
@@ -159,7 +159,7 @@ test "NEP-2 roundtrip encryption and decryption" {
     try testing.expect(original_key_pair.getPrivateKey().eql(decrypted_result.private_key));
 }
 
-/// Test NEP-2 error conditions
+// /// Test NEP-2 error conditions
 test "NEP-2 error conditions" {
     const allocator = testing.allocator;
     
@@ -197,7 +197,7 @@ test "NEP-2 error conditions" {
     );
 }
 
-/// Test NEP-2 with different scrypt parameters
+// /// Test NEP-2 with different scrypt parameters
 test "NEP-2 with different scrypt parameters" {
     const allocator = testing.allocator;
     
@@ -233,7 +233,7 @@ test "NEP-2 with different scrypt parameters" {
     try testing.expect(!std.mem.eql(u8, encrypted_fast, encrypted_strong));
 }
 
-/// Test NEP-2 validation and format checking
+// /// Test NEP-2 validation and format checking
 test "NEP-2 validation and format checking" {
     const allocator = testing.allocator;
     
@@ -257,7 +257,7 @@ test "NEP-2 validation and format checking" {
     try testing.expect(NEP2.detectFormat("invalidkey") == .Unknown);
 }
 
-/// Test NEP-2 performance with different parameters
+// /// Test NEP-2 performance with different parameters
 test "NEP-2 performance with different parameters" {
     const allocator = testing.allocator;
     

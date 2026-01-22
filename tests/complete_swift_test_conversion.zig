@@ -8,7 +8,7 @@ const std = @import("std");
 
 const neo = @import("neo-zig");
 
-/// Complete witness system tests (converted from WitnessTests.swift, WitnessScopeTests.swift)
+// /// Complete witness system tests (converted from WitnessTests.swift, WitnessScopeTests.swift)
 test "complete witness system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -54,7 +54,7 @@ test "complete witness system test conversion" {
     std.log.info("✅ ALL Witness System Tests Converted", .{});
 }
 
-/// Complete signer tests (converted from SignerTests.swift, AccountSignerTests.swift)
+// /// Complete signer tests (converted from SignerTests.swift, AccountSignerTests.swift)
 test "complete signer system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -87,7 +87,7 @@ test "complete signer system test conversion" {
     std.log.info("✅ ALL Signer System Tests Converted", .{});
 }
 
-/// Complete transaction tests (converted from TransactionBuilderTests.swift, NeoTransactionTests.swift)
+// /// Complete transaction tests (converted from TransactionBuilderTests.swift, NeoTransactionTests.swift)
 test "complete transaction system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -156,7 +156,7 @@ test "complete transaction system test conversion" {
     std.log.info("✅ ALL Transaction System Tests Converted", .{});
 }
 
-/// Complete contract tests (converted from ALL contract test files)
+// /// Complete contract tests (converted from ALL contract test files)
 test "complete contract system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -219,7 +219,7 @@ test "complete contract system test conversion" {
     std.log.info("✅ ALL Contract System Tests Converted", .{});
 }
 
-/// Complete crypto tests (converted from ALL crypto test files)
+// /// Complete crypto tests (converted from ALL crypto test files)
 test "complete crypto system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -310,7 +310,7 @@ test "complete crypto system test conversion" {
     std.log.info("✅ ALL Crypto System Tests Converted", .{});
 }
 
-/// Complete wallet tests (converted from ALL wallet test files)
+// /// Complete wallet tests (converted from ALL wallet test files)
 test "complete wallet system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -367,7 +367,7 @@ test "complete wallet system test conversion" {
     std.log.info("✅ ALL Wallet System Tests Converted", .{});
 }
 
-/// Complete serialization tests (converted from BinaryReaderTests.swift, BinaryWriterTests.swift)
+// /// Complete serialization tests (converted from BinaryReaderTests.swift, BinaryWriterTests.swift)
 test "complete serialization system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -416,7 +416,7 @@ test "complete serialization system test conversion" {
     std.log.info("✅ ALL Serialization System Tests Converted", .{});
 }
 
-/// Complete utility tests (converted from ALL utility test files)
+// /// Complete utility tests (converted from ALL utility test files)
 test "complete utility system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -470,7 +470,7 @@ test "complete utility system test conversion" {
     std.log.info("✅ ALL Utility System Tests Converted", .{});
 }
 
-/// Complete type system tests (converted from ALL type test files)
+// /// Complete type system tests (converted from ALL type test files)
 test "complete type system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -531,7 +531,7 @@ test "complete type system test conversion" {
     std.log.info("✅ ALL Type System Tests Converted", .{});
 }
 
-/// Complete protocol tests (converted from ALL protocol test files)
+// /// Complete protocol tests (converted from ALL protocol test files)
 test "complete protocol system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -583,7 +583,7 @@ test "complete protocol system test conversion" {
     std.log.info("✅ ALL Protocol System Tests Converted", .{});
 }
 
-/// Complete script tests (converted from ScriptBuilderTests.swift, ScriptReaderTests.swift)
+// /// Complete script tests (converted from ScriptBuilderTests.swift, ScriptReaderTests.swift)
 test "complete script system test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
@@ -644,7 +644,7 @@ test "complete script system test conversion" {
     std.log.info("✅ ALL Script System Tests Converted", .{});
 }
 
-/// Complete integration test (converted from ALL integration test scenarios)
+// /// Complete integration test (converted from ALL integration test scenarios)
 test "complete integration test conversion" {
     const testing = std.testing;
     const allocator = testing.allocator;
