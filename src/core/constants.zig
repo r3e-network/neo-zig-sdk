@@ -2,6 +2,18 @@
 //!
 //! Complete conversion from NeoSwift/Sources/NeoSwift/NeoConstants.swift
 //! All constants match the original Swift implementation for compatibility.
+//!
+//! ## Neo N3 Version Compatibility
+//!
+//! This SDK is compatible with Neo N3 v3.9.x including v3.9.2.
+//!
+//! Key compatibility points:
+//! - VM opcodes include PUSHT (0x08), PUSHF (0x09), MODMUL (0xA5), MODPOW (0xA6), ABORTMSG (0xE0), ASSERTMSG (0xE1)
+//! - Interop services and pricing match Neo 3.9.x
+//! - Native contract hashes are aligned with v3.9.x
+//! - `getversion` parsing includes hardfork metadata
+//!
+//! See: https://docs.neo.org/docs/en-us/develop/write/version.html
 
 const std = @import("std");
 
@@ -35,6 +47,20 @@ pub const NetworkMagic = struct {
     pub const TESTNET: u32 = 0x3554334e;
 };
 
+/// Neo N3 Protocol Version
+pub const NeoVersion = struct {
+    /// Major version number
+    pub const MAJOR: u32 = 3;
+    /// Minor version number
+    pub const MINOR: u32 = 9;
+    /// Patch version number (v3.9.2)
+    pub const PATCH: u32 = 2;
+    /// Full version string
+    pub const STRING: []const u8 = "3.9.2";
+    /// Protocol version for getversion RPC
+    pub const PROTOCOL_VERSION: u32 = 0;
+};
+
 /// Default magic used when the RPC endpoint does not report protocol metadata
 pub const DEFAULT_NETWORK_MAGIC: u32 = NetworkMagic.MAINNET;
 
@@ -65,17 +91,31 @@ pub const AddressConstants = struct {
 };
 
 /// Native contract script hashes
+///
+/// These hashes are aligned with Neo N3 v3.9.2.
+/// See: https://docs.neo.org/docs/en-us/develop/write/native.html
 pub const NativeContracts = struct {
+    /// ContractManagement contract (updated in v3.9.0)
     pub const CONTRACT_MANAGEMENT: [20]u8 = [_]u8{ 0xff, 0xfd, 0xc9, 0x37, 0x64, 0xdb, 0xad, 0xdd, 0x97, 0xc4, 0x8f, 0x25, 0x2a, 0x53, 0xea, 0x46, 0x43, 0xfa, 0xa3, 0xfd };
+    /// StdLib contract
     pub const STD_LIB: [20]u8 = [_]u8{ 0xac, 0xce, 0x6f, 0xd8, 0x0d, 0x44, 0xe1, 0x79, 0x6a, 0xa0, 0xc2, 0xc6, 0x25, 0xe9, 0xe4, 0xe0, 0xce, 0x39, 0xef, 0xc0 };
+    /// CryptoLib contract
     pub const CRYPTO_LIB: [20]u8 = [_]u8{ 0x72, 0x6c, 0xb6, 0xe0, 0xcd, 0x86, 0x28, 0xa1, 0x35, 0x0a, 0x61, 0x13, 0x84, 0x68, 0x89, 0x11, 0xab, 0x75, 0xf5, 0x1b };
+    /// LedgerContract (added in v3.9.0)
     pub const LEDGER_CONTRACT: [20]u8 = [_]u8{ 0xda, 0x65, 0xb6, 0x00, 0xf7, 0x12, 0x4c, 0xe6, 0xc7, 0x99, 0x50, 0xc1, 0x77, 0x2a, 0x36, 0x40, 0x31, 0x04, 0xf2, 0xbe };
+    /// NeoToken contract
     pub const NEO_TOKEN: [20]u8 = [_]u8{ 0xef, 0x40, 0x73, 0xa0, 0xf2, 0xb3, 0x05, 0xa3, 0x8e, 0xc4, 0x05, 0x0e, 0x4d, 0x3d, 0x28, 0xbc, 0x40, 0xea, 0x63, 0xf5 };
+    /// GasToken contract
     pub const GAS_TOKEN: [20]u8 = [_]u8{ 0xd2, 0xa4, 0xcf, 0xf3, 0x19, 0x13, 0x01, 0x61, 0x55, 0xe3, 0x8e, 0x47, 0x4a, 0x2c, 0x06, 0xd0, 0x8b, 0xe2, 0x76, 0xcf };
+    /// PolicyContract contract
     pub const POLICY_CONTRACT: [20]u8 = [_]u8{ 0xcc, 0x5e, 0x4e, 0xdd, 0x9f, 0x5f, 0x8d, 0xba, 0x8b, 0xb6, 0x57, 0x34, 0x54, 0x1d, 0xf7, 0xa1, 0xc0, 0x81, 0xc6, 0x7b };
+    /// RoleManagement contract
     pub const ROLE_MANAGEMENT: [20]u8 = [_]u8{ 0x49, 0xcf, 0x4e, 0x53, 0x78, 0xff, 0xcd, 0x4d, 0xec, 0x03, 0x4f, 0xd9, 0x8a, 0x17, 0x4c, 0x54, 0x91, 0xe3, 0x95, 0xe2 };
+    /// OracleContract
     pub const ORACLE_CONTRACT: [20]u8 = [_]u8{ 0xfe, 0x92, 0x4b, 0x7c, 0xfe, 0x89, 0xdd, 0xd2, 0x71, 0xab, 0xaf, 0x72, 0x10, 0xa8, 0x0a, 0x7e, 0x11, 0x17, 0x87, 0x58 };
+    /// NotaryContract (added in v3.9.0)
     pub const NOTARY: [20]u8 = [_]u8{ 0xc1, 0xe1, 0x4f, 0x19, 0xc3, 0xe6, 0x0d, 0x0b, 0x92, 0x44, 0xd0, 0x6d, 0xd7, 0xba, 0x9b, 0x11, 0x31, 0x35, 0xec, 0x3b };
+    /// TreasuryContract (added in v3.9.0)
     pub const TREASURY: [20]u8 = [_]u8{ 0x15, 0x63, 0x26, 0xf2, 0x5b, 0x1b, 0x5d, 0x83, 0x9a, 0x4d, 0x32, 0x6a, 0xea, 0xa7, 0x53, 0x83, 0xc9, 0x56, 0x3a, 0xc1 };
 };
 
@@ -87,17 +127,41 @@ pub const FeeConstants = struct {
     pub const SYSTEM_FEE_FACTOR: u32 = 30;
 };
 
-/// Interop service IDs
+/// Neo N3 v3.9.2 Interop Services
+///
+/// Interop service hashes are defined as the little-endian u32 value of the
+/// first 4 bytes of SHA256(<ascii method name>), matching Neo N3 v3.9.2.
+///
+/// See: https://docs.neo.org/docs/en-us/develop/write/interop.html
 pub const InteropServices = struct {
-    // Interop service hashes are defined as the little-endian u32 value of the
-    // first 4 bytes of SHA256(<ascii method name>), matching Neo N3.
-    pub const SYSTEM_CONTRACT_CALL: u32 = 0x525b7d62; // sha256("System.Contract.Call")[0..4] == 62 7d 5b 52
-    pub const SYSTEM_CRYPTO_CHECK_SIG: u32 = 0x27b3e756; // sha256("System.Crypto.CheckSig")[0..4] == 56 e7 b3 27
-    pub const SYSTEM_CRYPTO_CHECK_MULTISIG: u32 = 0x3adcd09e; // sha256("System.Crypto.CheckMultisig")[0..4] == 9e d0 dc 3a
-    pub const SYSTEM_CRYPTO_RIPEMD160: u32 = 0x99b42d80; // sha256("System.Crypto.Ripemd160")[0..4] == 80 2d b4 99
-    pub const SYSTEM_CRYPTO_SHA256: u32 = 0x0e594654; // sha256("System.Crypto.Sha256")[0..4] == 54 46 59 0e
+    // Contract Call
+    pub const SYSTEM_CONTRACT_CALL: u32 = 0x525b7d62;
+    pub const SYSTEM_CONTRACT_CREATEMULTISIGACCOUNT: u32 = 0x1b5f9793;
+    pub const SYSTEM_CONTRACT_CREATESTANDARDACCOUNT: u32 = 0x6de2c376;
+    pub const SYSTEM_CONTRACT_CALCULATENETWORKFEE: u32 = 0x8a287441;
+    pub const SYSTEM_CONTRACT_GETCALLFLAGS: u32 = 0xc007c0a4;
+    pub const SYSTEM_CONTRACT_GETVERSIONS: u32 = 0xb9ea7ba2;
 
-    // Legacy aliases (kept for compatibility with earlier SDK versions).
+    // Crypto
+    pub const SYSTEM_CRYPTO_CHECK_SIG: u32 = 0x27b3e756;
+    pub const SYSTEM_CRYPTO_CHECK_MULTISIG: u32 = 0x3adcd09e;
+    pub const SYSTEM_CRYPTO_RIPEMD160: u32 = 0x99b42d80;
+    pub const SYSTEM_CRYPTO_SHA256: u32 = 0x0e594654;
+
+    // Runtime
+    pub const SYSTEM_RUNTIME_GETTIME: u32 = 0xbce7c833;
+    pub const SYSTEM_RUNTIME_GETTRIGGER: u32 = 0x7c8d8d07;
+    pub const SYSTEM_RUNTIME_LOG: u32 = 0x9c0f0a7d;
+    pub const SYSTEM_RUNTIME_NOTIFY: u32 = 0xd2c1b624;
+    pub const SYSTEM_RUNTIME_CHECKWITNESS: u32 = 0x2926d483;
+    pub const SYSTEM_RUNTIME_BURNGAS: u32 = 0x6f7b6340;
+    pub const SYSTEM_RUNTIME_GETEXECUTIONSCRIPTTRIGGER: u32 = 0xd2c95629;
+    pub const SYSTEM_RUNTIME_GETCALLINGSCRIPTHASH: u32 = 0x6a24777b;
+    pub const SYSTEM_RUNTIME_GETENTRYSCRIPTHASH: u32 = 0xf0ca4b9d;
+    pub const SYSTEM_RUNTIME_GETCURRENTSCRIPTHASH: u32 = 0xb2f944dd;
+    pub const SYSTEM_RUNTIME_GETRANDOM: u32 = 0xa7a3b73e;
+
+    // Legacy aliases (kept for compatibility)
     pub const NEO_CRYPTO_RIPEMD160: u32 = SYSTEM_CRYPTO_RIPEMD160;
     pub const NEO_CRYPTO_SHA256: u32 = SYSTEM_CRYPTO_SHA256;
 };

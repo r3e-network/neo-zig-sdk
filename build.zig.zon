@@ -6,7 +6,7 @@
     .version = "1.1.0",
 
     // Generated once; never change unless intentionally forking/renaming.
-    .fingerprint = 0xb1f40d43ed3e65e, // Changing this has security and trust implications.
+    .fingerprint = 0xa85f40d41fd9a539, // Changing this has security and trust implications.
 
     // Earliest supported Zig toolchain.
     .minimum_zig_version = "0.14.0",

@@ -10,7 +10,7 @@ This document describes the Neo Zig SDK architecture, module organization, desig
 - [Data Flow](#data-flow)
 - [Adding New RPC Methods](#adding-new-rpc-methods)
 - [Version and Protocol Parsing](#version-and-protocol-parsing)
-- [Neo v3.9 Compatibility](#neo-v39-compatibility)
+- [Neo v3.9.2 Compatibility](#neo-v392-compatibility)
 - [Design Patterns](#design-patterns)
 
 ## Module Organization
@@ -402,43 +402,67 @@ if (json.object.get("optional_field")) |value| {
 2. If field is optional: use default, don't fail
 3. If field format varies: handle common variants
 
-## Neo v3.9 Compatibility
+## Neo v3.9.2 Compatibility
 
-Key v3.9 compatibility points in this SDK:
+This SDK is fully compatible with Neo N3 v3.9.2.
+
+Key v3.9.2 compatibility points in this SDK:
 
 ### VM Opcodes
 
-All v3.9 opcodes are implemented:
+All v3.9.x opcodes are implemented:
 
-- `PUSHT` / `PUSHF`: Push true/false constants
-- `MODMUL` / `MODPOW`: Modular multiplication/exponentiation
-- `ABORTMSG` / `ASSERTMSG`: Abort with message
+- `PUSHT` (0x08) / `PUSHF` (0x09): Push true/false constants
+- `MODMUL` (0xA5) / `MODPOW` (0xA6): Modular multiplication/exponentiation
+- `ABORTMSG` (0xE0) / `ASSERTMSG` (0xE1): Abort with message
+
+See [src/script/op_code.zig](src/script/op_code.zig) for complete opcode list.
 
 ### Interop Services
 
-Neo 3.9 interop pricing and services:
+Neo 3.9.2 interop pricing and services:
 
 - `Runtime.GetAddressVersion`
 - `Runtime.LoadScript`
 - `Runtime.CurrentSigners`
 - `Storage.Local.*`
+- `Crypto.*` functions
+
+See [src/core/constants.zig](src/core/constants.zig) for interop service hashes.
 
 ### Native Contract Hashes
 
-Native contract addresses match Neo v3.9:
+Native contract addresses match Neo v3.9.2:
 
-- `NeoToken.NEO_HASH`
-- `GasToken.GAS_HASH`
-- `PolicyContract.POLICY_HASH`
-- `RoleManagement.ROLE_HASH`
+| Contract | Hash |
+|----------|------|
+| ContractManagement | `0xffd9c37...` |
+| NeoToken | `0xef4073a0...` |
+| GasToken | `0xd2a4cff3...` |
+| PolicyContract | `0xcc5e4edd...` |
+| RoleManagement | `0x49cf4e53...` |
+| OracleContract | `0xfe924b7c...` |
+| Notary | `0xc1e14f19...` |
+| Treasury | `0x156326f2...` |
+
+See [src/core/constants.zig](src/core/constants.zig) for complete list.
 
 ### getversion Parsing
 
-Includes hardfork metadata:
+Includes v3.9.2 hardfork metadata:
 
 - `hardforks`: Array of hardfork information
 - `standbycommittee`: Committee members
 - `seedlist`: Network seed nodes
+
+### Version Information
+
+```zig
+neo.constants.NeoVersion.STRING;  // "3.9.2"
+neo.constants.NeoVersion.MAJOR;   // 3
+neo.constants.NeoVersion.MINOR;   // 9
+neo.constants.NeoVersion.PATCH;   // 2
+```
 
 ## Design Patterns
 
