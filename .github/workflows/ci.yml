@@ -10,6 +10,7 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +63,7 @@ jobs:
   security:
     name: Security Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
     
     steps:
@@ -99,6 +101,7 @@ jobs:
   performance:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
     
     steps:
@@ -118,6 +121,7 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
     
     steps:
@@ -142,6 +146,7 @@ jobs:
   compatibility:
     name: API Compatibility Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
     
     steps:
@@ -165,6 +170,7 @@ jobs:
   release:
     name: Release Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [test, security, performance, coverage, compatibility]
     if: github.ref == 'refs/heads/main'
     
