@@ -182,7 +182,10 @@ jobs:
         # Build optimized release
         zig build -Doptimize=ReleaseFast
         
-        # Package documentation
+        # Clear cache before docs to avoid conflicts with ReleaseFast artifacts
+        rm -rf ~/.cache/zig
+        
+        # Package documentation (uses Debug by default)
         zig build docs
         
         echo "Release artifacts built successfully"
